@@ -1,0 +1,7 @@
+/*
+!/.gitignore
+!/src/
+**/.agents/
+**/.agents/**
+**/bin/
+**/obj/
