@@ -2,10 +2,26 @@ const { useEffect, useMemo, useState } = React;
 
 const STATUS = ["Todo", "Doing", "Done"];
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const STATUS_ALIASES = {
+  Created: "Todo",
+  Planned: "Todo",
+  InProgress: "Doing",
+  Blocked: "Doing",
+  Done: "Done",
+  Archived: "Done",
+  Todo: "Todo",
+  Doing: "Doing",
+  Completed: "Done"
+};
 const STATUS_LABELS = {
   Todo: "Todo",
   Doing: "Doing",
   Done: "Done",
+};
+const STATUS_NOTES = {
+  Todo: "Pendiente de arranque o definicion",
+  Doing: "Trabajo activo en curso",
+  Done: "Cierre y validacion final"
 };
 const PRIORITY = ["Low", "Medium", "High", "Critical"];
 const ALLOWED_TRANSITIONS = {
@@ -64,6 +80,9 @@ function formatDateTime(dateValue) {
 }
 
 function normalizeStatus(status) {
+  if (typeof status !== "string" || status.length === 0) return "Todo";
+  const aliased = STATUS_ALIASES[status] || status;
+  if (STATUS.includes(aliased)) return aliased;
   if (STATUS.includes(status)) return status;
   if (status === "Created" || status === "Planned") return "Todo";
   if (status === "InProgress" || status === "Blocked") return "Doing";
@@ -102,12 +121,9 @@ function isBackwardTransition(current, next) {
   return STATUS_ORDER[next] < STATUS_ORDER[current];
 }
 
-function confirmStatusChange(current, next) {
-  if (!isBackwardTransition(current, next)) return true;
-
-  return window.confirm(
-    "Esta accion no es recomendada por consistencia de datos y puede romper el historial de tareas.\n\nAceptar: cambiar la tarea de todas formas.\nCancelar: abortar la accion."
-  );
+function getBackwardTransitionWarning(current, next) {
+  if (!isBackwardTransition(current, next)) return null;
+  return "Esta accion no es recomendada por consistencia de datos y puede romper el historial de tareas.";
 }
 
 function normalizeId(id) {
@@ -148,6 +164,7 @@ function App() {
   const [isContextLoading, setIsContextLoading] = useState(false);
   const [contextTab, setContextTab] = useState("comments");
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [noticeModal, setNoticeModal] = useState(null);
 
   const isEditing = form.id !== null;
 
@@ -168,12 +185,44 @@ function App() {
 
   const stats = useMemo(() => {
     const total = tasks.length;
-    const todo = tasks.filter((t) => t.status === "Todo").length;
-    const doing = tasks.filter((t) => t.status === "Doing").length;
+    const created = tasks.filter((t) => t.status === "Created").length;
+    const planned = tasks.filter((t) => t.status === "Planned").length;
+    const inProgress = tasks.filter((t) => t.status === "InProgress").length;
+    const blocked = tasks.filter((t) => t.status === "Blocked").length;
     const done = tasks.filter((t) => t.status === "Done").length;
     const progress = total === 0 ? 0 : Math.round((done / total) * 100);
-    return { total, todo, doing, done, progress };
+    return { total, created, planned, inProgress, blocked, done, progress };
   }, [tasks]);
+
+  const progressValue = Math.max(0, Math.min(100, stats.progress));
+  const progressCircleStyle = {
+    backgroundImage: `conic-gradient(var(--primary) ${progressValue}%, rgba(148, 163, 184, 0.18) 0)`
+  };
+
+  function askConfirmation(title, message) {
+    return new Promise((resolve) => {
+      setNoticeModal({
+        title,
+        message,
+        resolve
+      });
+    });
+  }
+
+  function closeNoticeModal() {
+    if (!noticeModal) return;
+    if (typeof noticeModal.resolve === "function") {
+      noticeModal.resolve(false);
+    }
+    setNoticeModal(null);
+  }
+
+  function onNoticeDecision(accepted) {
+    if (typeof noticeModal?.resolve === "function") {
+      noticeModal.resolve(accepted);
+    }
+    setNoticeModal(null);
+  }
 
   const filteredTasks = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -361,7 +410,8 @@ function App() {
         });
 
         if (previousTask && previousTask.status !== form.status) {
-          if (!confirmStatusChange(previousTask.status, form.status)) {
+          const warning = getBackwardTransitionWarning(previousTask.status, form.status);
+          if (warning && !(await askConfirmation("Cambio de estado", warning))) {
             setIsBusy(false);
             return;
           }
@@ -392,7 +442,8 @@ function App() {
   }
 
   async function deleteTask(id) {
-    if (!window.confirm("¿Eliminar esta tarea?")) return;
+    const confirmed = await askConfirmation("Eliminar tarea", "¿Eliminar esta tarea?");
+    if (!confirmed) return;
 
     setIsBusy(true);
     try {
@@ -421,7 +472,8 @@ function App() {
       return;
     }
 
-    if (!confirmStatusChange(task.status, status)) {
+    const warning = getBackwardTransitionWarning(task.status, status);
+    if (warning && !(await askConfirmation("Cambio de estado", warning))) {
       return;
     }
 
@@ -449,7 +501,8 @@ function App() {
       return;
     }
 
-    if (!confirmStatusChange(task.status, targetStatus)) return;
+    const warning = getBackwardTransitionWarning(task.status, targetStatus);
+    if (warning && !(await askConfirmation("Cambio de estado", warning))) return;
 
     const previousTasks = tasks;
     setTasks((current) =>
@@ -542,57 +595,80 @@ function App() {
 
   return (
     <div className="layout">
-      <header className="header">
-        <div>
-          <p className="label">Task Tracker Pro</p>
-          <h1>Operación de tareas</h1>
+      <header className="hero">
+        <div className="hero-copy">
+          <h1>Task Tracker Pro</h1>
+          <p className="hero-text">
+            Tablero operativo para priorizar, ejecutar y cerrar trabajo sin perder el hilo del contexto.
+          </p>
         </div>
         <div className="header-actions">
-          <button className="btn primary" type="button" onClick={openCreateForm}>
-            + Nueva tarea
-          </button>
-          <button
-            className="btn ghost theme-toggle"
-            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-            type="button"
-            aria-label={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
-            title={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
-          >
-            <span className="theme-icon" aria-hidden="true">{theme === "light" ? "🌙" : "☀"}</span>
-            <span>{theme === "light" ? "Modo oscuro" : "Modo claro"}</span>
-          </button>
+          <div className="hero-side-actions">
+            <button
+              className="btn ghost theme-toggle"
+              onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+              type="button"
+              aria-label={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
+              title={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
+            >
+              <span className="theme-icon" aria-hidden="true">{theme === "light" ? "🌙" : "☀"}</span>
+              <span>{theme === "light" ? "Modo oscuro" : "Modo claro"}</span>
+            </button>
+          </div>
         </div>
       </header>
 
       <section className="metrics">
-        <article className="metric"><span>Total</span><strong>{stats.total}</strong></article>
-        <article className="metric"><span>Todo</span><strong>{stats.todo}</strong></article>
-        <article className="metric"><span>Doing</span><strong>{stats.doing}</strong></article>
-        <article className="metric"><span>Done</span><strong>{stats.done}</strong></article>
-        <article className="metric wide">
+        <article className="metric metric-total">
+          <span>Total</span>
+          <strong>{stats.total}</strong>
+          <small>Volumen visible en tablero</small>
+        </article>
+        <article className="metric">
+          <span>Todo</span>
+          <strong>{stats.todo}</strong>
+          <small>Pendientes de iniciar</small>
+        </article>
+        <article className="metric">
+          <span>Doing</span>
+          <strong>{stats.doing}</strong>
+          <small>Trabajo en movimiento</small>
+        </article>
+        <article className="metric">
+          <span>Done</span>
+          <strong>{stats.done}</strong>
+          <small>Tareas cerradas</small>
+        </article>
+        <article className="metric metric-progress">
           <span>Progreso</span>
-          <div className="progress-circle" style={{ "--progress": `${stats.progress}%` }}>
+          <div className="progress-circle" style={progressCircleStyle}>
             <div className="progress-circle-inner">
-              <strong>{stats.progress}%</strong>
+              <strong>{progressValue}%</strong>
             </div>
           </div>
+          <small>Relacion entre cierre y total</small>
         </article>
       </section>
 
       <section className="main-grid">
         <section className="board-wrapper">
-          <div className="toolbar">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por título, descripción o etiqueta"
-            />
-            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="all">Todos</option>
-              {STATUS.map((s) => (
-                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-              ))}
-            </select>
+          <div className="toolbar-shell">
+            <div className="toolbar">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por titulo, descripcion o etiqueta"
+              />
+              <button className="btn primary toolbar-primary" type="button" onClick={openCreateForm}>
+                + Nueva tarea
+              </button>
+              <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+                <option value="all">Todos</option>
+                {STATUS.map((s) => (
+                  <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {isLoading ? (
@@ -612,7 +688,10 @@ function App() {
                   onDrop={(event) => onColumnDrop(event, status)}
                 >
                   <div className="column-head">
-                    <h3>{STATUS_LABELS[status]}</h3>
+                    <div>
+                      <h3>{STATUS_LABELS[status]}</h3>
+                      <small>{STATUS_NOTES[status]}</small>
+                    </div>
                     <span>{board[status].length}</span>
                   </div>
 
@@ -632,9 +711,11 @@ function App() {
                             onDragStart={(event) => onTaskDragStart(event, task.id)}
                             onDragEnd={onTaskDragEnd}
                           >
-                            <h4>{task.title}</h4>
+                            <div className="card-topline">
+                              <h4>{task.title}</h4>
+                              <span className="card-date">Objetivo {formatDate(dueDate)}</span>
+                            </div>
                             <p>{task.description || "Sin descripción"}</p>
-                            <small>Objetivo: {formatDate(dueDate)}</small>
                             <div className="card-meta-row">
                               <span className={`pill priority-${(task.priority || "Medium").toLowerCase()}`}>
                                 {task.priority || "Medium"}
@@ -712,7 +793,10 @@ function App() {
 
           <section className="context-panel">
             <div className="context-head">
-              <h3>Contexto</h3>
+              <div>
+                <p className="label">Detalle conectado</p>
+                <h3>Contexto</h3>
+              </div>
               {selectedTask && (
                 <div className="context-task-meta">
                   <small>{selectedTask.title}</small>
@@ -890,6 +974,25 @@ function App() {
                 </button>
               </div>
             </form>
+          </aside>
+        </div>
+      )}
+
+      {noticeModal && (
+        <div className="notice-overlay" onClick={closeNoticeModal}>
+          <aside className="panel notice-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="notice-head">
+              <h3>{noticeModal.title}</h3>
+            </div>
+            <p className="notice-text">{noticeModal.message}</p>
+            <div className="row actions">
+              <button className="btn ghost" type="button" onClick={() => onNoticeDecision(false)} autoFocus>
+                Cancelar
+              </button>
+              <button className="btn primary" type="button" onClick={() => onNoticeDecision(true)}>
+                Aceptar
+              </button>
+            </div>
           </aside>
         </div>
       )}
