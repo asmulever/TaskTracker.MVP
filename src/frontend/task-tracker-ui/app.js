@@ -1,220 +1,42 @@
 const { useEffect, useMemo, useRef, useState } = React;
 
-const STATUS = ["Todo", "Doing", "Done"];
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const STATUS_ALIASES = {
-  Created: "Todo",
-  Planned: "Todo",
-  InProgress: "Doing",
-  Blocked: "Doing",
-  Done: "Done",
-  Archived: "Done",
-  Todo: "Todo",
-  Doing: "Doing",
-  Completed: "Done"
-};
-const STATUS_LABELS = {
-  Todo: "Todo",
-  Doing: "Doing",
-  Done: "Done",
-};
-const STATUS_NOTES = {
-  Todo: "Pendiente de arranque o definicion",
-  Doing: "Trabajo activo en curso",
-  Done: "Cierre y validacion final"
-};
-const PRIORITY = ["Low", "Medium", "High", "Critical"];
-const ALLOWED_TRANSITIONS = {
-  Todo: ["Doing"],
-  Doing: ["Done"],
-  Done: []
-};
-const STATUS_ORDER = {
-  Todo: 0,
-  Doing: 1,
-  Done: 2
-};
-const THEME_COOKIE = "task_theme";
-const MAX_COMMENT_IMAGE_SIZE = 4 * 1024 * 1024;
-const FOCUS_CAPACITY = 3;
-const DELIVERY_RISK_WINDOW_DAYS = 3;
-const ACTIVITY_FEED_LOOKBACK_DAYS = 7;
-const METRIC_HELP_ITEMS = [
-  {
-    key: "goalCompletion",
-    label: "Cumplimiento del objetivo",
-    description: "Porcentaje de tareas comprometidas para este ciclo que ya fueron cerradas. Mide avance real contra el plan, no solo volumen total.",
-    formula: "Formula sugerida: tareas con targetDueDate dentro del ciclo actual y status = Done / total comprometidas en el ciclo."
-  },
-  {
-    key: "focusActive",
-    label: "Foco activo",
-    description: "Cantidad de tareas actualmente en ejecucion frente a la capacidad recomendada. Ayuda a detectar multitarea excesiva.",
-    formula: "Formula sugerida: Doing actual / capacidad objetivo fija, por ejemplo 3."
-  },
-  {
-    key: "deliveryRisk",
-    label: "Riesgo de entrega",
-    description: "Tareas no cerradas cuyo vencimiento esta proximo o vencido. Senala riesgo operativo antes de que impacte el objetivo.",
-    formula: "Formula sugerida: tareas != Done con targetDueDate <= hoy + 3 dias."
-  },
-  {
-    key: "weeklyClosure",
-    label: "Cierre semanal",
-    description: "Cantidad de tareas cerradas en los ultimos 7 dias. Sirve como lectura de ritmo, no de stock.",
-    formula: "Si no tienes completedAt, se puede derivar desde TaskActivity."
-  }
-];
-
-function getCookieValue(name) {
-  const regex = new RegExp(`(?:^|; )${name}=([^;]*)`);
-  const match = document.cookie.match(regex);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-function setCookie(name, value, days = 365) {
-  const maxAge = days * 24 * 60 * 60;
-  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; samesite=lax`;
-}
-
-function getInitialTheme() {
-  const saved = getCookieValue(THEME_COOKIE);
-  if (saved === "light" || saved === "dark") return saved;
-  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  return prefersDark ? "dark" : "light";
-}
-
-function toast(message, isOk = true) {
-  Toastify({
-    text: message,
-    duration: 2600,
-    gravity: "top",
-    position: "right",
-    close: true,
-    style: { background: isOk ? "#0f766e" : "#b91c1c", color: "#ffffff" }
-  }).showToast();
-}
-
-function formatDate(dateValue) {
-  if (!dateValue) return "Sin fecha";
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return "Sin fecha";
-  return date.toLocaleDateString("es-CL");
-}
-
-function formatDateTime(dateValue) {
-  if (!dateValue) return "Sin fecha";
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return "Sin fecha";
-  return date.toLocaleString("es-CL");
-}
-
-function normalizeStatus(status) {
-  if (typeof status !== "string" || status.length === 0) return "Todo";
-  const aliased = STATUS_ALIASES[status] || status;
-  if (STATUS.includes(aliased)) return aliased;
-  if (STATUS.includes(status)) return status;
-  if (status === "Created" || status === "Planned") return "Todo";
-  if (status === "InProgress" || status === "Blocked") return "Doing";
-  if (status === "Archived") return "Done";
-  return "Todo";
-}
-
-function parseLabels(labelsText) {
-  if (!labelsText) return [];
-  return labelsText
-    .split(",")
-    .map((label) => label.trim())
-    .filter((label) => label.length > 0);
-}
-
-function getTodayInputDate() {
-  const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60 * 1000;
-  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
-}
-
-function parseDateValue(dateValue) {
-  if (!dateValue) return null;
-  const date = new Date(dateValue);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function startOfDay(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function endOfDay(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
-}
-
-function emptyForm() {
-  return {
-    id: null,
-    title: "",
-    description: "",
-    priority: "Medium",
-    targetStartDate: getTodayInputDate(),
-    targetDueDate: "",
-    labelsText: "",
-    status: "Todo"
-  };
-}
-
-function canMoveTo(current, next) {
-  if (current === next) return true;
-  return (ALLOWED_TRANSITIONS[current] || []).includes(next);
-}
-
-function isBackwardTransition(current, next) {
-  if (!(current in STATUS_ORDER) || !(next in STATUS_ORDER)) return false;
-  return STATUS_ORDER[next] < STATUS_ORDER[current];
-}
-
-function getBackwardTransitionWarning(current, next) {
-  if (!isBackwardTransition(current, next)) return null;
-  return "Esta accion no es recomendada por consistencia de datos y puede romper el historial de tareas.";
-}
-
-function normalizeId(id) {
-  return typeof id === "string" ? id.trim() : String(id ?? "").trim();
-}
-
-function isValidTaskId(id) {
-  return UUID_REGEX.test(normalizeId(id));
-}
-
-function nextStatus(current) {
-  const next = ALLOWED_TRANSITIONS[current] || [];
-  return next.length > 0 ? next[0] : null;
-}
-
-function runCardAction(event, action) {
-  event.preventDefault();
-  event.stopPropagation();
-  action();
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("No se pudo leer la imagen seleccionada."));
-    reader.readAsDataURL(file);
-  });
-}
-
-function getCommentImageFileName(file) {
-  if (file && typeof file.name === "string" && file.name.trim().length > 0) {
-    return file.name.trim();
-  }
-
-  const extension = (file?.type || "image/png").split("/")[1] || "png";
-  return `imagen-${Date.now()}.${extension}`;
-}
+const {
+  STATUS,
+  STATUS_LABELS,
+  STATUS_NOTES,
+  PRIORITY,
+  THEME_COOKIE,
+  MAX_COMMENT_IMAGE_SIZE,
+  COMMENT_IMAGE_SIZE_LABEL,
+  getInitialTheme,
+  setCookie,
+  toast,
+  formatDate,
+  normalizeStatus,
+  parseLabels,
+  emptyForm,
+  canMoveTo,
+  isBackwardTransition,
+  getBackwardTransitionWarning,
+  normalizeId,
+  isValidTaskId,
+  nextStatus,
+  runCardAction,
+  readFileAsDataUrl,
+  getCommentImageFileName,
+  createApiClient,
+  buildDashboardMetrics,
+  getActivityFeedFromUtc,
+  MetricsSection,
+  MetricsHelpModal,
+  ContextModal,
+  TaskFormModal,
+  NoticeModal
+} = window.TaskTrackerUi;
 
 function App() {
   const apiBase = (window.TASK_API_URL || window.location.origin).replace(/\/$/, "");
+  const request = useMemo(() => createApiClient(apiBase), [apiBase]);
 
   const [theme, setTheme] = useState(getInitialTheme);
   const [tasks, setTasks] = useState([]);
@@ -238,11 +60,18 @@ function App() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isMetricsHelpOpen, setIsMetricsHelpOpen] = useState(false);
   const [noticeModal, setNoticeModal] = useState(null);
+
   const commentFileInputRef = useRef(null);
   const titleInputRef = useRef(null);
   const descriptionInputRef = useRef(null);
 
   const isEditing = form.id !== null;
+
+  function resetCommentFileInput() {
+    if (commentFileInputRef.current) {
+      commentFileInputRef.current.value = "";
+    }
+  }
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -252,7 +81,7 @@ function App() {
 
   useEffect(() => {
     loadTasks();
-  }, []);
+  }, [request]);
 
   useEffect(() => {
     if (!selectedTaskId) return;
@@ -266,70 +95,10 @@ function App() {
     });
   }, [isFormOpen]);
 
-  const dashboardMetrics = useMemo(() => {
-    const now = new Date();
-    const cycleStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const riskThreshold = endOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + DELIVERY_RISK_WINDOW_DAYS));
-
-    const committedThisCycle = tasks.filter((task) => {
-      const dueDate = parseDateValue(task.targetDueDate || task.dueDate);
-      return dueDate && dueDate >= cycleStart && dueDate < cycleEnd;
-    });
-    const completedThisCycle = committedThisCycle.filter((task) => task.status === "Done").length;
-    const goalCompletionPercent = committedThisCycle.length === 0
-      ? 0
-      : Math.round((completedThisCycle / committedThisCycle.length) * 100);
-
-    const focusActiveCount = tasks.filter((task) => task.status === "Doing").length;
-
-    const atRiskCount = tasks.filter((task) => {
-      if (task.status === "Done") return false;
-      const dueDate = parseDateValue(task.targetDueDate || task.dueDate);
-      return dueDate && startOfDay(dueDate) <= riskThreshold;
-    }).length;
-
-    const weeklyClosedCount = new Set(
-      recentActivityFeed
-        .filter((item) => item.action === "StatusChanged" && /to Done\b/i.test(item.detail || ""))
-        .map((item) => item.taskId)
-    ).size;
-
-    return {
-      goalCompletionPercent,
-      completedThisCycle,
-      committedThisCycleCount: committedThisCycle.length,
-      focusActiveCount,
-      focusCapacity: FOCUS_CAPACITY,
-      atRiskCount,
-      weeklyClosedCount
-    };
-  }, [tasks, recentActivityFeed]);
-
-  function askConfirmation(title, message) {
-    return new Promise((resolve) => {
-      setNoticeModal({
-        title,
-        message,
-        resolve
-      });
-    });
-  }
-
-  function closeNoticeModal() {
-    if (!noticeModal) return;
-    if (typeof noticeModal.resolve === "function") {
-      noticeModal.resolve(false);
-    }
-    setNoticeModal(null);
-  }
-
-  function onNoticeDecision(accepted) {
-    if (typeof noticeModal?.resolve === "function") {
-      noticeModal.resolve(accepted);
-    }
-    setNoticeModal(null);
-  }
+  const dashboardMetrics = useMemo(
+    () => buildDashboardMetrics(tasks, recentActivityFeed),
+    [tasks, recentActivityFeed]
+  );
 
   const filteredTasks = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -361,55 +130,45 @@ function App() {
     return initial;
   }, [filteredTasks]);
 
-  async function request(path, options = {}) {
-    const response = await fetch(`${apiBase}${path}`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {})
-      },
-      ...options
+  const selectedTask = useMemo(
+    () => tasks.find((task) => task.id === selectedTaskId) || null,
+    [tasks, selectedTaskId]
+  );
+
+  function askConfirmation(title, message) {
+    return new Promise((resolve) => {
+      setNoticeModal({
+        title,
+        message,
+        resolve
+      });
     });
+  }
 
-    const contentType = (response.headers.get("content-type") || "").toLowerCase();
-    const isJsonResponse = contentType.includes("application/json") || contentType.includes("+json");
-
-    if (!response.ok) {
-      let message = "No se pudo completar la operación";
-      try {
-        const text = await response.text();
-        if (text) {
-          if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-            message = "El servidor devolvió HTML en vez de JSON. Revisa la URL del backend.";
-          } else {
-            message = text;
-          }
-        }
-      } catch {
-        // noop
-      }
-      throw new Error(message);
+  function closeNoticeModal() {
+    if (!noticeModal) return;
+    if (typeof noticeModal.resolve === "function") {
+      noticeModal.resolve(false);
     }
+    setNoticeModal(null);
+  }
 
-    if (response.status === 204) return null;
-    if (!isJsonResponse) {
-      const text = await response.text();
-      if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-        throw new Error("El endpoint devolvió HTML en vez de JSON. Verifica que la ruta exista en backend.");
-      }
-      throw new Error("Respuesta inválida del servidor (se esperaba JSON).");
+  function onNoticeDecision(accepted) {
+    if (typeof noticeModal?.resolve === "function") {
+      noticeModal.resolve(accepted);
     }
-
-    return response.json();
+    setNoticeModal(null);
   }
 
   async function loadTasks() {
     setIsLoading(true);
     try {
-      const fromUtc = encodeURIComponent(new Date(Date.now() - ACTIVITY_FEED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString());
+      const fromUtc = encodeURIComponent(getActivityFeedFromUtc());
       const [data, activityFeed] = await Promise.all([
         request("/tasks", { method: "GET", headers: {} }),
         request(`/tasks/activity-feed?fromUtc=${fromUtc}`, { method: "GET", headers: {} }).catch(() => [])
       ]);
+
       const normalized = Array.isArray(data)
         ? data.map((task) => ({
             ...task,
@@ -419,6 +178,7 @@ function App() {
             priority: PRIORITY.includes(task.priority) ? task.priority : "Medium"
           }))
         : [];
+
       setTasks(normalized);
       setRecentActivityFeed(Array.isArray(activityFeed) ? activityFeed : []);
     } catch (error) {
@@ -455,7 +215,7 @@ function App() {
   }
 
   function onFormField(field, value) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((current) => ({ ...current, [field]: value }));
   }
 
   function resetForm() {
@@ -490,9 +250,7 @@ function App() {
     setActivity([]);
     setSelectedTaskId(null);
     setIsContextOpen(false);
-    if (commentFileInputRef.current) {
-      commentFileInputRef.current.value = "";
-    }
+    resetCommentFileInput();
   }
 
   function startEdit(task) {
@@ -524,7 +282,6 @@ function App() {
       return;
     }
 
-    const labels = parseLabels(form.labelsText);
     const payload = {
       title,
       description,
@@ -532,13 +289,13 @@ function App() {
       targetStartDate: form.targetStartDate || null,
       targetDueDate: form.targetDueDate || null,
       dueDate: form.targetDueDate || null,
-      labels
+      labels: parseLabels(form.labelsText)
     };
 
     setIsBusy(true);
     try {
       if (isEditing) {
-        const previousTask = tasks.find((x) => x.id === form.id);
+        const previousTask = tasks.find((task) => task.id === form.id);
 
         await request(`/tasks/${form.id}`, {
           method: "PUT",
@@ -585,9 +342,7 @@ function App() {
     try {
       await request(`/tasks/${id}`, { method: "DELETE" });
       if (form.id === id) closeFormModal();
-      if (selectedTaskId === id) {
-        closeContextModal();
-      }
+      if (selectedTaskId === id) closeContextModal();
       toast("Tarea eliminada");
       await loadTasks();
     } catch (error) {
@@ -598,7 +353,7 @@ function App() {
   }
 
   async function updateTaskStatus(id, status) {
-    const task = tasks.find((x) => x.id === id);
+    const task = tasks.find((item) => item.id === id);
     if (!task) return;
 
     if (!canMoveTo(task.status, status) && !isBackwardTransition(task.status, status)) {
@@ -607,9 +362,7 @@ function App() {
     }
 
     const warning = getBackwardTransitionWarning(task.status, status);
-    if (warning && !(await askConfirmation("Cambio de estado", warning))) {
-      return;
-    }
+    if (warning && !(await askConfirmation("Cambio de estado", warning))) return;
 
     setIsBusy(true);
     try {
@@ -627,7 +380,7 @@ function App() {
   }
 
   async function moveTaskToStatus(taskId, targetStatus) {
-    const task = tasks.find((t) => t.id === taskId);
+    const task = tasks.find((item) => item.id === taskId);
     if (!task || task.status === targetStatus) return;
 
     if (!canMoveTo(task.status, targetStatus) && !isBackwardTransition(task.status, targetStatus)) {
@@ -692,27 +445,36 @@ function App() {
       toast("Selecciona una tarea válida", false);
       return;
     }
+
     if (!commentText.trim() && !commentImage) {
       toast("El comentario o la imagen son obligatorios", false);
+      return;
+    }
+
+    if (commentImage?.size && commentImage.size > MAX_COMMENT_IMAGE_SIZE) {
+      toast(`La imagen supera el maximo de ${COMMENT_IMAGE_SIZE_LABEL}.`, false);
+      resetCommentFileInput();
       return;
     }
 
     setIsBusy(true);
     try {
       const taskId = selectedTaskId;
+      const requestBody = new FormData();
+      requestBody.set("content", commentText.trim());
+      if (commentImage?.file) {
+        requestBody.set("image", commentImage.file, commentImage.fileName);
+      }
+
       await request(`/tasks/${selectedTaskId}/comments`, {
         method: "POST",
-        body: JSON.stringify({
-          content: commentText.trim(),
-          imageDataUrl: commentImage?.dataUrl || null,
-          imageFileName: commentImage?.fileName || null
-        })
+        body: requestBody
       });
+
       setCommentText("");
       setCommentImage(null);
-      if (commentFileInputRef.current) {
-        commentFileInputRef.current.value = "";
-      }
+      resetCommentFileInput();
+
       await loadTaskContext(taskId);
       await loadTasks();
       closeContextModal();
@@ -725,27 +487,34 @@ function App() {
   }
 
   async function attachCommentImage(file) {
-    if (!file) return;
+    if (!file) return false;
 
     if (!(file.type || "").toLowerCase().startsWith("image/")) {
+      resetCommentFileInput();
       toast("Solo se permiten imagenes adjuntas.", false);
-      return;
+      return false;
     }
 
     if (file.size > MAX_COMMENT_IMAGE_SIZE) {
-      toast("La imagen supera el maximo de 4 MB.", false);
-      return;
+      resetCommentFileInput();
+      toast(`La imagen supera el maximo de ${COMMENT_IMAGE_SIZE_LABEL}.`, false);
+      return false;
     }
 
     try {
       const dataUrl = await readFileAsDataUrl(file);
       setCommentImage({
         dataUrl,
-        fileName: getCommentImageFileName(file)
+        fileName: getCommentImageFileName(file),
+        size: file.size,
+        file
       });
       toast("Imagen adjuntada");
+      return true;
     } catch (error) {
+      resetCommentFileInput();
       toast(error.message, false);
+      return false;
     }
   }
 
@@ -772,9 +541,7 @@ function App() {
 
   function clearCommentImage() {
     setCommentImage(null);
-    if (commentFileInputRef.current) {
-      commentFileInputRef.current.value = "";
-    }
+    resetCommentFileInput();
   }
 
   function onTitleKeyDown(event) {
@@ -793,11 +560,6 @@ function App() {
     }));
   }
 
-  const selectedTask = useMemo(
-    () => tasks.find((task) => task.id === selectedTaskId) || null,
-    [tasks, selectedTaskId]
-  );
-
   return (
     <div className="layout">
       <header className="hero">
@@ -811,7 +573,7 @@ function App() {
           <div className="hero-side-actions">
             <button
               className="btn ghost theme-toggle"
-              onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+              onClick={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
               type="button"
               aria-label={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
               title={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
@@ -826,42 +588,18 @@ function App() {
               aria-label="Ver ayuda de indicadores"
               title="Ver ayuda de indicadores"
             >
-              <span aria-hidden="true">ⓘ</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M7.5 5.5h8A2.5 2.5 0 0 1 18 8v10.25a.75.75 0 0 1-1.12.65 4.9 4.9 0 0 0-2.38-.65H9a3 3 0 0 0-3 3V8.5a3 3 0 0 1 1.5-3Z" />
+                <path d="M9.75 9.5h5.5" />
+                <path d="M9.75 12.5h5.5" />
+                <path d="M9.75 15.5h3.5" />
+              </svg>
             </button>
           </div>
         </div>
       </header>
 
-      <section className="metrics">
-        <article className="metric metric-highlight">
-          <div className="metric-headline">
-            <p>{METRIC_HELP_ITEMS[0].label}</p>
-          </div>
-          <strong>{dashboardMetrics.goalCompletionPercent}%</strong>
-          <small>{dashboardMetrics.completedThisCycle} de {dashboardMetrics.committedThisCycleCount} comprometidas este mes</small>
-        </article>
-        <article className="metric">
-          <div className="metric-headline">
-            <p>{METRIC_HELP_ITEMS[1].label}</p>
-          </div>
-          <strong>{dashboardMetrics.focusActiveCount}/{dashboardMetrics.focusCapacity}</strong>
-          <small>Capacidad recomendada para sostener foco sin sobrecarga</small>
-        </article>
-        <article className="metric">
-          <div className="metric-headline">
-            <p>{METRIC_HELP_ITEMS[2].label}</p>
-          </div>
-          <strong>{dashboardMetrics.atRiskCount}</strong>
-          <small>Tareas no cerradas con vencimiento proximo o ya vencido</small>
-        </article>
-        <article className="metric">
-          <div className="metric-headline">
-            <p>{METRIC_HELP_ITEMS[3].label}</p>
-          </div>
-          <strong>{dashboardMetrics.weeklyClosedCount}</strong>
-          <small>Tareas cerradas en los ultimos 7 dias</small>
-        </article>
-      </section>
+      <MetricsSection dashboardMetrics={dashboardMetrics} />
 
       <section className="main-grid">
         <section className="board-wrapper">
@@ -869,16 +607,16 @@ function App() {
             <div className="toolbar">
               <input
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar por titulo, descripcion o etiqueta"
               />
               <button className="btn primary toolbar-primary" type="button" onClick={openCreateForm}>
                 + Nueva tarea
               </button>
-              <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <select value={filter} onChange={(event) => setFilter(event.target.value)}>
                 <option value="all">Todos</option>
-                {STATUS.map((s) => (
-                  <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                {STATUS.map((status) => (
+                  <option key={status} value={status}>{STATUS_LABELS[status]}</option>
                 ))}
               </select>
             </div>
@@ -948,9 +686,7 @@ function App() {
                                 className="btn ghost icon-btn"
                                 type="button"
                                 draggable={false}
-                                onClick={(event) => runCardAction(event, () => {
-                                  openContextModal(task.id);
-                                })}
+                                onClick={(event) => runCardAction(event, () => openContextModal(task.id))}
                                 disabled={isBusy}
                                 aria-label="Ver contexto"
                                 title="Ver contexto"
@@ -1002,319 +738,55 @@ function App() {
               ))}
             </div>
           )}
-
         </section>
       </section>
 
-      {isContextOpen && (
-        <div className="form-overlay" onClick={closeContextModal}>
-          <aside className="panel modal-panel context-modal-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <p className="label">Detalle conectado</p>
-                <h2>Contexto</h2>
-              </div>
-              <button className="btn ghost icon-btn" type="button" onClick={closeContextModal} aria-label="Cerrar contexto" title="Cerrar contexto">
-                <span aria-hidden="true">✕</span>
-              </button>
-            </div>
+      <ContextModal
+        isOpen={isContextOpen}
+        onClose={closeContextModal}
+        selectedTask={selectedTask}
+        commentFileInputRef={commentFileInputRef}
+        onCommentImageSelected={onCommentImageSelected}
+        commentText={commentText}
+        onCommentTextChange={(event) => setCommentText(event.target.value)}
+        onCommentPaste={onCommentPaste}
+        onOpenFileSelector={() => commentFileInputRef.current?.click()}
+        isBusy={isBusy}
+        commentImage={commentImage}
+        onClearCommentImage={clearCommentImage}
+        onAddComment={addComment}
+        isContextLoading={isContextLoading}
+        contextTab={contextTab}
+        onContextTabChange={setContextTab}
+        comments={comments}
+        activity={activity}
+        expandedCommentImages={expandedCommentImages}
+        onToggleCommentImage={toggleCommentImage}
+      />
 
-            <section className="context-panel">
-              {selectedTask && (
-                <div className="context-head">
-                  <div className="context-task-meta">
-                    <strong>{selectedTask.title}</strong>
-                    <span className={`pill priority-${(selectedTask.priority || "Medium").toLowerCase()}`}>
-                      {selectedTask.priority || "Medium"}
-                    </span>
-                    <span className="pill status">{selectedTask.status}</span>
-                  </div>
-                </div>
-              )}
+      <MetricsHelpModal
+        isOpen={isMetricsHelpOpen}
+        onClose={() => setIsMetricsHelpOpen(false)}
+      />
 
-              {!selectedTask ? (
-                <p className="context-empty">Selecciona una tarea para ver comentarios y actividad.</p>
-              ) : (
-                <>
-                  <div className="context-comment-box">
-                    <input
-                      ref={commentFileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={onCommentImageSelected}
-                    />
-                    <textarea
-                      value={commentText}
-                      onChange={(event) => setCommentText(event.target.value)}
-                      onPaste={onCommentPaste}
-                      placeholder="Agregar comentario o pegar una imagen"
-                      maxLength={1000}
-                    />
-                    <div className="context-comment-tools">
-                      <button
-                        className="btn ghost"
-                        type="button"
-                        onClick={() => commentFileInputRef.current?.click()}
-                        disabled={isBusy}
-                      >
-                        Adjuntar imagen
-                      </button>
-                      <small className="hint">Tambien puedes pegar una imagen con Ctrl+V.</small>
-                    </div>
-                    {commentImage && (
-                      <div className="comment-image-preview">
-                        <img src={commentImage.dataUrl} alt={commentImage.fileName || "Imagen adjunta"} />
-                        <div className="comment-image-meta">
-                          <small>{commentImage.fileName}</small>
-                          <button className="btn ghost" type="button" onClick={clearCommentImage} disabled={isBusy}>
-                            Quitar imagen
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    <div className="context-comment-actions">
-                      <button className="btn ghost" type="button" onClick={closeContextModal} disabled={isBusy}>
-                        Cancelar
-                      </button>
-                      <button className="btn primary" type="button" onClick={addComment} disabled={isBusy}>
-                        Publicar comentario
-                      </button>
-                    </div>
-                  </div>
+      <TaskFormModal
+        isOpen={isFormOpen}
+        onClose={closeFormModal}
+        isEditing={isEditing}
+        saveTask={saveTask}
+        form={form}
+        onFormField={onFormField}
+        onTitleKeyDown={onTitleKeyDown}
+        titleInputRef={titleInputRef}
+        descriptionInputRef={descriptionInputRef}
+        isBusy={isBusy}
+      />
 
-                  {isContextLoading ? (
-                    <p className="context-empty">Cargando contexto...</p>
-                  ) : (
-                    <div className="context-tabs-wrap">
-                      <div className="context-tabs">
-                        <button
-                          className={`btn ghost tab-btn ${contextTab === "comments" ? "active" : ""}`}
-                          type="button"
-                          onClick={() => setContextTab("comments")}
-                        >
-                          Comentarios ({comments.length})
-                        </button>
-                        <button
-                          className={`btn ghost tab-btn ${contextTab === "activity" ? "active" : ""}`}
-                          type="button"
-                          onClick={() => setContextTab("activity")}
-                        >
-                          Actividad ({activity.length})
-                        </button>
-                      </div>
-
-                      {contextTab === "comments" ? (
-                        comments.length === 0 ? (
-                          <p className="context-empty">Sin comentarios.</p>
-                        ) : (
-                          <ul className="context-list">
-                            {comments.map((comment) => (
-                              <li key={comment.id}>
-                                <div className="comment-meta-row">
-                                  <small>{formatDateTime(comment.createdAt)}</small>
-                                  {comment.imageDataUrl ? (
-                                    <span className="comment-attachment-badge" title="Este comentario tiene una imagen adjunta">
-                                      <span aria-hidden="true">🖼</span>
-                                      <span>Imagen adjunta</span>
-                                    </span>
-                                  ) : null}
-                                </div>
-                                {comment.content ? <p>{comment.content}</p> : null}
-                                {comment.imageDataUrl ? (
-                                  <>
-                                    <button
-                                      className="btn ghost comment-attachment-toggle"
-                                      type="button"
-                                      onClick={() => toggleCommentImage(comment.id)}
-                                    >
-                                      <span aria-hidden="true">🖼</span>
-                                      <span>
-                                        {expandedCommentImages[comment.id] ? "Ocultar imagen adjunta" : "Ver imagen adjunta"}
-                                      </span>
-                                    </button>
-                                    {expandedCommentImages[comment.id] ? (
-                                      <img
-                                        className="comment-image"
-                                        src={comment.imageDataUrl}
-                                        alt={comment.imageFileName || "Imagen adjunta del comentario"}
-                                        loading="lazy"
-                                      />
-                                    ) : null}
-                                  </>
-                                ) : null}
-                              </li>
-                            ))}
-                          </ul>
-                        )
-                      ) : activity.length === 0 ? (
-                        <p className="context-empty">Sin actividad.</p>
-                      ) : (
-                        <ul className="context-list">
-                          {activity.map((item) => (
-                            <li key={item.id}>
-                              <p>{item.action}</p>
-                              <small>{item.detail}</small>
-                              <small>{formatDateTime(item.createdAt)}</small>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </section>
-          </aside>
-        </div>
-      )}
-
-      {isMetricsHelpOpen && (
-        <div className="notice-overlay" onClick={() => setIsMetricsHelpOpen(false)}>
-          <aside className="panel notice-panel metrics-help-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <p className="label">Referencia</p>
-                <h2>Guia de indicadores</h2>
-              </div>
-              <button
-                className="btn ghost icon-btn"
-                type="button"
-                onClick={() => setIsMetricsHelpOpen(false)}
-                aria-label="Cerrar ayuda de indicadores"
-                title="Cerrar ayuda de indicadores"
-              >
-                <span aria-hidden="true">✕</span>
-              </button>
-            </div>
-            <div className="metrics-help-list">
-              {METRIC_HELP_ITEMS.map((item) => (
-                <section key={item.key} className="metrics-help-item">
-                  <h3>{item.label}</h3>
-                  <p>{item.description}</p>
-                  <small>{item.formula}</small>
-                </section>
-              ))}
-            </div>
-          </aside>
-        </div>
-      )}
-
-      {isFormOpen && (
-        <div className="form-overlay" onClick={closeFormModal}>
-          <aside className="panel modal-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-head">
-              <h2>{isEditing ? "Editar tarea" : "Crear tarea"}</h2>
-              <button className="btn ghost icon-btn" type="button" onClick={closeFormModal} aria-label="Cerrar formulario" title="Cerrar formulario">
-                <span aria-hidden="true">✕</span>
-              </button>
-            </div>
-            <form onSubmit={saveTask} className="task-form">
-              <label>Título</label>
-              <input
-                ref={titleInputRef}
-                value={form.title}
-                onChange={(e) => onFormField("title", e.target.value)}
-                onKeyDown={onTitleKeyDown}
-                maxLength={200}
-                placeholder="Ej: Ajustar API de reportes"
-                required
-              />
-
-              <label>Descripción</label>
-              <textarea
-                ref={descriptionInputRef}
-                value={form.description}
-                onChange={(e) => onFormField("description", e.target.value)}
-                maxLength={1000}
-                placeholder="Detalle breve del trabajo"
-              />
-
-              <div className="row two">
-                <div>
-                  <label>Prioridad</label>
-                  <select value={form.priority} onChange={(e) => onFormField("priority", e.target.value)}>
-                    {PRIORITY.map((p) => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label>Estado</label>
-                  <select
-                    value={form.status}
-                    onChange={(e) => onFormField("status", e.target.value)}
-                    disabled={!isEditing}
-                  >
-                    {STATUS.map((s) => (
-                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="row two">
-                <div>
-                  <label>Inicio objetivo</label>
-                  <input
-                    type="date"
-                    value={form.targetStartDate}
-                    onChange={(e) => onFormField("targetStartDate", e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label>Fecha objetivo</label>
-                  <input
-                    type="date"
-                    value={form.targetDueDate}
-                    onChange={(e) => onFormField("targetDueDate", e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <label>Etiquetas (separadas por coma)</label>
-              <input
-                value={form.labelsText}
-                onChange={(e) => onFormField("labelsText", e.target.value)}
-                maxLength={350}
-                placeholder="backend, api, urgente"
-              />
-
-              <small className="hint">{form.title.length}/200 caracteres</small>
-
-              <div className="row actions">
-                <button className="btn ghost" type="button" onClick={closeFormModal} disabled={isBusy}>
-                  Cancelar
-                </button>
-                <button className="btn primary" type="submit" disabled={isBusy}>
-                  {isBusy ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear tarea"}
-                </button>
-              </div>
-            </form>
-          </aside>
-        </div>
-      )}
-
-      {noticeModal && (
-        <div className="notice-overlay" onClick={closeNoticeModal}>
-          <aside className="panel notice-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="notice-head">
-              <h3>{noticeModal.title}</h3>
-            </div>
-            <p className="notice-text">{noticeModal.message}</p>
-            <div className="row actions">
-              <button className="btn ghost" type="button" onClick={() => onNoticeDecision(false)} autoFocus>
-                Cancelar
-              </button>
-              <button className="btn primary" type="button" onClick={() => onNoticeDecision(true)}>
-                Aceptar
-              </button>
-            </div>
-          </aside>
-        </div>
-      )}
+      <NoticeModal
+        noticeModal={noticeModal}
+        onClose={closeNoticeModal}
+        onDecision={onNoticeDecision}
+      />
 
       {isBusy && (
         <div className="overlay">

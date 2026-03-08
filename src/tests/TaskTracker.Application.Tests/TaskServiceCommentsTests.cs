@@ -69,4 +69,21 @@ public sealed class TaskServiceCommentsTests
 
         await Assert.ThrowsAsync<ArgumentException>(() => service.AddCommentAsync(taskId, new CreateTaskCommentRequest()));
     }
+
+    [Fact]
+    public async Task AddCommentAsync_ShouldRejectImageLargerThan2Mb()
+    {
+        var repository = new InMemoryTaskRepository();
+        var service = new TaskService(repository);
+        var taskId = await service.CreateAsync(new CreateTaskRequest { Title = "Validar imagen" });
+        var oversizedBytes = (2 * 1024 * 1024) + 3;
+        var base64Length = ((oversizedBytes + 2) / 3) * 4;
+        var imageDataUrl = $"data:image/png;base64,{new string('A', base64Length)}";
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AddCommentAsync(taskId, new CreateTaskCommentRequest
+        {
+            ImageDataUrl = imageDataUrl,
+            ImageFileName = "oversized.png"
+        }));
+    }
 }

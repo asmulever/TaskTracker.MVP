@@ -8,6 +8,7 @@ namespace TaskTracker.Application.Services;
 public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
 {
     private const int MaxCommentLength = 1000;
+    private const int MaxCommentImageFileSizeBytes = 2 * 1024 * 1024;
     private const int MaxCommentImageDataLength = 6_000_000;
     private const int MaxCommentImageFileNameLength = 260;
 
@@ -136,6 +137,11 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
                 throw new ArgumentException("Comment image must be a valid image data URL.", nameof(request.ImageDataUrl));
             }
 
+            if (GetImageByteSize(imageDataUrl) > MaxCommentImageFileSizeBytes)
+            {
+                throw new ArgumentException("Comment image cannot exceed 2 MB.", nameof(request.ImageDataUrl));
+            }
+
             if (imageDataUrl.Length > MaxCommentImageDataLength)
             {
                 throw new ArgumentException("Comment image is too large.", nameof(request.ImageDataUrl));
@@ -184,6 +190,28 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         _ = next;
         // Restriction removed: UI handles warning/confirmation for backward moves.
         return true;
+    }
+
+    private static int GetImageByteSize(string imageDataUrl)
+    {
+        var separatorIndex = imageDataUrl.IndexOf(',');
+        if (separatorIndex < 0 || separatorIndex == imageDataUrl.Length - 1)
+        {
+            throw new ArgumentException("Comment image must be a valid image data URL.");
+        }
+
+        var base64 = imageDataUrl[(separatorIndex + 1)..].Trim();
+        var padding = 0;
+        if (base64.EndsWith("==", StringComparison.Ordinal))
+        {
+            padding = 2;
+        }
+        else if (base64.EndsWith("=", StringComparison.Ordinal))
+        {
+            padding = 1;
+        }
+
+        return Math.Max(0, (base64.Length * 3 / 4) - padding);
     }
 
     private static List<string> NormalizeLabels(IReadOnlyCollection<string>? labels)

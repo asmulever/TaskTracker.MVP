@@ -176,13 +176,23 @@ button:hover:not(:disabled) {
 }
 
 .help-circle-btn {
-  width: 30px;
-  height: 30px;
+  width: 42px;
+  height: 42px;
   padding: 0;
   display: inline-grid;
   place-items: center;
-  border-radius: 50%;
-  font-weight: 800;
+  border-radius: 14px;
+  line-height: 0;
+}
+
+.help-circle-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .metric strong {
@@ -706,6 +716,14 @@ body[data-theme="dark"] .btn.danger {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.context-comment-hints {
+  display: grid;
+  gap: 2px;
+  flex: 1 1 240px;
+  justify-items: end;
+  text-align: right;
 }
 
 .tab-btn {

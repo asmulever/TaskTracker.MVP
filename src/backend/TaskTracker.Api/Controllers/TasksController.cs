@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using TaskTracker.Application.Abstractions;
 using TaskTracker.Application.DTOs;
+using TaskTracker.Api.Contracts;
 
 namespace TaskTracker.Api.Controllers;
 
@@ -90,10 +91,27 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
     }
 
     [HttpPost("{id}/comments")]
+    [Consumes("application/json")]
     public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateTaskCommentRequest request, CancellationToken cancellationToken)
     {
         try
         {
+            var commentId = await taskService.AddCommentAsync(id, request, cancellationToken);
+            return commentId is null ? NotFound() : Ok(new { id = commentId.Value });
+        }
+        catch (ArgumentException exception)
+        {
+            return ValidationProblem(detail: exception.Message);
+        }
+    }
+
+    [HttpPost("{id}/comments")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> AddCommentForm(Guid id, [FromForm] CreateTaskCommentFormRequest form, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var request = await MapCommentFormRequestAsync(form, cancellationToken);
             var commentId = await taskService.AddCommentAsync(id, request, cancellationToken);
             return commentId is null ? NotFound() : Ok(new { id = commentId.Value });
         }
@@ -124,6 +142,37 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
             cancellationToken);
 
         return Ok(activity);
+    }
+
+    private static async Task<CreateTaskCommentRequest> MapCommentFormRequestAsync(
+        CreateTaskCommentFormRequest form,
+        CancellationToken cancellationToken)
+    {
+        string? imageDataUrl = null;
+        string? imageFileName = null;
+
+        if (form.Image is { Length: > 0 } image)
+        {
+            if (string.IsNullOrWhiteSpace(image.ContentType) ||
+                !image.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Comment image must be a valid image file.", nameof(form.Image));
+            }
+
+            await using var imageStream = image.OpenReadStream();
+            using var memoryStream = new MemoryStream();
+            await imageStream.CopyToAsync(memoryStream, cancellationToken);
+
+            imageDataUrl = $"data:{image.ContentType.Trim()};base64,{Convert.ToBase64String(memoryStream.ToArray())}";
+            imageFileName = image.FileName;
+        }
+
+        return new CreateTaskCommentRequest
+        {
+            Content = form.Content ?? string.Empty,
+            ImageDataUrl = imageDataUrl,
+            ImageFileName = imageFileName
+        };
     }
 
 }
