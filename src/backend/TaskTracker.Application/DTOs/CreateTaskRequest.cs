@@ -8,4 +8,5 @@ public sealed class CreateTaskRequest
     public DateTime? TargetStartDate { get; set; }
     public DateTime? TargetDueDate { get; set; }
     public DateTime? DueDate { get; set; }
+    public IReadOnlyCollection<string>? Labels { get; set; }
 }

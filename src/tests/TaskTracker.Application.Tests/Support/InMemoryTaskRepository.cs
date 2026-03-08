@@ -29,7 +29,11 @@ internal sealed class InMemoryTaskRepository : ITaskRepository
 
         current.Title = task.Title;
         current.Description = task.Description;
+        current.Priority = task.Priority;
+        current.TargetStartDate = task.TargetStartDate;
+        current.TargetDueDate = task.TargetDueDate;
         current.DueDate = task.DueDate;
+        current.Labels = [..task.Labels];
         return Task.FromResult(true);
     }
 

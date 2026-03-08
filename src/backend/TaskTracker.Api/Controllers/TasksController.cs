@@ -65,7 +65,14 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
     [HttpPatch("{id:guid}/status")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateTaskStatusRequest request, CancellationToken cancellationToken)
     {
-        var updated = await taskService.UpdateStatusAsync(id, request, cancellationToken);
-        return updated ? NoContent() : NotFound();
+        try
+        {
+            var updated = await taskService.UpdateStatusAsync(id, request, cancellationToken);
+            return updated ? NoContent() : NotFound();
+        }
+        catch (ArgumentException exception)
+        {
+            return ValidationProblem(detail: exception.Message);
+        }
     }
 }

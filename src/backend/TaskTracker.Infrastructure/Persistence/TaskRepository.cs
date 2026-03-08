@@ -25,8 +25,9 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
             """;
 
         using var connection = connectionFactory.CreateConnection();
-        var rows = await connection.QueryAsync<TaskRecord>(new CommandDefinition(sql, cancellationToken: cancellationToken));
-        return rows.Select(Map).ToArray();
+        var rows = (await connection.QueryAsync<TaskRecord>(new CommandDefinition(sql, cancellationToken: cancellationToken))).ToArray();
+        var labelsByTaskId = await LoadLabelsByTaskIdAsync(connection, rows.Select(row => row.Id).ToArray(), cancellationToken);
+        return rows.Select(row => Map(row, labelsByTaskId.GetValueOrDefault(row.Id, []))).ToArray();
     }
 
     public async Task<TaskItem?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -49,7 +50,13 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         var row = await connection.QuerySingleOrDefaultAsync<TaskRecord>(
             new CommandDefinition(sql, new { Id = id }, cancellationToken: cancellationToken));
 
-        return row is null ? null : Map(row);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var labelsByTaskId = await LoadLabelsByTaskIdAsync(connection, [row.Id], cancellationToken);
+        return Map(row, labelsByTaskId.GetValueOrDefault(row.Id, []));
     }
 
     public async Task<Guid> CreateAsync(TaskItem task, CancellationToken cancellationToken = default)
@@ -60,6 +67,8 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
             """;
 
         using var connection = connectionFactory.CreateConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
         await connection.ExecuteAsync(new CommandDefinition(
             sql,
             new
@@ -74,8 +83,11 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
                 task.DueDate,
                 task.CreatedAt
             },
+            transaction: transaction,
             cancellationToken: cancellationToken));
 
+        await ReplaceLabelsAsync(connection, transaction, task.Id, task.Labels, cancellationToken);
+        transaction.Commit();
         return task.Id;
     }
 
@@ -93,6 +105,8 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
             """;
 
         using var connection = connectionFactory.CreateConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
         var affectedRows = await connection.ExecuteAsync(new CommandDefinition(
             sql,
             new
@@ -105,8 +119,15 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
                 task.TargetDueDate,
                 task.DueDate
             },
+            transaction: transaction,
             cancellationToken: cancellationToken));
 
+        if (affectedRows > 0)
+        {
+            await ReplaceLabelsAsync(connection, transaction, task.Id, task.Labels, cancellationToken);
+        }
+
+        transaction.Commit();
         return affectedRows > 0;
     }
 
@@ -140,7 +161,7 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return affectedRows > 0;
     }
 
-    private static TaskItem Map(TaskRecord record)
+    private static TaskItem Map(TaskRecord record, List<string> labels)
     {
         if (!Enum.TryParse<DomainTaskStatus>(record.Status, ignoreCase: true, out var status))
         {
@@ -162,8 +183,72 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
             TargetStartDate = record.TargetStartDate,
             TargetDueDate = record.TargetDueDate,
             DueDate = record.DueDate,
-            CreatedAt = record.CreatedAt
+            CreatedAt = record.CreatedAt,
+            Labels = labels
         };
+    }
+
+    private static async Task<Dictionary<Guid, List<string>>> LoadLabelsByTaskIdAsync(
+        System.Data.IDbConnection connection,
+        IReadOnlyCollection<Guid> taskIds,
+        CancellationToken cancellationToken)
+    {
+        if (taskIds.Count == 0)
+        {
+            return [];
+        }
+
+        const string sql = """
+            SELECT TaskId, Label
+            FROM dbo.TaskLabels
+            WHERE TaskId IN @TaskIds
+            ORDER BY Label;
+            """;
+
+        var rows = await connection.QueryAsync<TaskLabelRecord>(new CommandDefinition(
+            sql,
+            new { TaskIds = taskIds.ToArray() },
+            cancellationToken: cancellationToken));
+
+        return rows
+            .GroupBy(static row => row.TaskId)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.Select(static row => row.Label).ToList());
+    }
+
+    private static async Task ReplaceLabelsAsync(
+        System.Data.IDbConnection connection,
+        System.Data.IDbTransaction transaction,
+        Guid taskId,
+        IReadOnlyCollection<string> labels,
+        CancellationToken cancellationToken)
+    {
+        const string deleteSql = "DELETE FROM dbo.TaskLabels WHERE TaskId = @TaskId;";
+        await connection.ExecuteAsync(new CommandDefinition(
+            deleteSql,
+            new { TaskId = taskId },
+            transaction: transaction,
+            cancellationToken: cancellationToken));
+
+        if (labels.Count == 0)
+        {
+            return;
+        }
+
+        const string insertSql = """
+            INSERT INTO dbo.TaskLabels (TaskId, Label)
+            VALUES (@TaskId, @Label);
+            """;
+
+        foreach (var label in labels)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                insertSql,
+                new { TaskId = taskId, Label = label },
+                transaction: transaction,
+                cancellationToken: cancellationToken));
+        }
     }
 
     private sealed class TaskRecord
@@ -177,5 +262,11 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         public DateTime? TargetDueDate { get; init; }
         public DateTime? DueDate { get; init; }
         public DateTime CreatedAt { get; init; }
+    }
+
+    private sealed class TaskLabelRecord
+    {
+        public Guid TaskId { get; init; }
+        public string Label { get; init; } = string.Empty;
     }
 }

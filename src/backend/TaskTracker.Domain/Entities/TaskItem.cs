@@ -11,4 +11,5 @@ public sealed class TaskItem
     public DateTime? TargetDueDate { get; set; }
     public DateTime? DueDate { get; set; }
     public DateTime CreatedAt { get; set; }
+    public List<string> Labels { get; set; } = [];
 }

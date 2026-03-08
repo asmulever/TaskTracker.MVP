@@ -24,6 +24,27 @@ public sealed class TaskServiceCreateTests
         Assert.NotNull(created);
         Assert.Equal("Revisar integracion", created!.Title);
         Assert.Equal("endpoint /tasks", created.Description);
+        Assert.Equal(TaskTracker.Domain.Enums.TaskStatus.Created, created.Status);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldNormalizeLabels()
+    {
+        var repository = new InMemoryTaskRepository();
+        var service = new TaskService(repository);
+
+        var id = await service.CreateAsync(new CreateTaskRequest
+        {
+            Title = "Agregar etiquetas",
+            Labels = [" backend ", "Backend", "kanban", ""]
+        });
+
+        var created = await repository.GetByIdAsync(id);
+
+        Assert.NotNull(created);
+        Assert.Equal(2, created!.Labels.Count);
+        Assert.True(created.Labels.Any(label => string.Equals(label, "backend", StringComparison.OrdinalIgnoreCase)));
+        Assert.True(created.Labels.Any(label => string.Equals(label, "kanban", StringComparison.OrdinalIgnoreCase)));
     }
 
     [Fact]

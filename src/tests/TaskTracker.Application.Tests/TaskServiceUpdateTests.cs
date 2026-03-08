@@ -32,6 +32,11 @@ public sealed class TaskServiceUpdateTests
             Title = "Ajustar tablero"
         });
 
+        var toPlanned = await service.UpdateStatusAsync(id, new UpdateTaskStatusRequest
+        {
+            Status = TaskTracker.Domain.Enums.TaskStatus.Planned
+        });
+
         var changed = await service.UpdateStatusAsync(id, new UpdateTaskStatusRequest
         {
             Status = TaskTracker.Domain.Enums.TaskStatus.Doing
@@ -39,8 +44,26 @@ public sealed class TaskServiceUpdateTests
 
         var saved = await repository.GetByIdAsync(id);
 
+        Assert.True(toPlanned);
         Assert.True(changed);
         Assert.NotNull(saved);
-        Assert.Equal(TaskTracker.Domain.Enums.TaskStatus.Doing, saved!.Status);
+        Assert.Equal(TaskTracker.Domain.Enums.TaskStatus.InProgress, saved!.Status);
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_ShouldRejectInvalidTransition()
+    {
+        var repository = new InMemoryTaskRepository();
+        var service = new TaskService(repository);
+
+        var id = await service.CreateAsync(new CreateTaskRequest
+        {
+            Title = "No puede ir directo a Done"
+        });
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateStatusAsync(id, new UpdateTaskStatusRequest
+        {
+            Status = TaskTracker.Domain.Enums.TaskStatus.Done
+        }));
     }
 }

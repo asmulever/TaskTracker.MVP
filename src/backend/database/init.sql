@@ -75,3 +75,16 @@ GO
 ALTER TABLE dbo.Tasks
 ADD CONSTRAINT CK_Tasks_Priority CHECK (Priority IN ('Low', 'Medium', 'High', 'Critical'));
 GO
+
+IF OBJECT_ID('dbo.TaskLabels', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.TaskLabels
+    (
+        TaskId UNIQUEIDENTIFIER NOT NULL,
+        Label NVARCHAR(30) NOT NULL,
+        CONSTRAINT PK_TaskLabels PRIMARY KEY (TaskId, Label),
+        CONSTRAINT FK_TaskLabels_Task FOREIGN KEY (TaskId)
+            REFERENCES dbo.Tasks (Id) ON DELETE CASCADE
+    );
+END
+GO
