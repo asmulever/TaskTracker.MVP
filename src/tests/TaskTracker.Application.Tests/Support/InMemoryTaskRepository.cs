@@ -7,6 +7,7 @@ internal sealed class InMemoryTaskRepository : ITaskRepository
 {
     private readonly List<TaskItem> _tasks = [];
     private readonly List<TaskComment> _comments = [];
+    private readonly List<TaskActivity> _activity = [];
 
     public Task<IReadOnlyCollection<TaskItem>> GetAllAsync(CancellationToken cancellationToken = default)
         => Task.FromResult((IReadOnlyCollection<TaskItem>)_tasks.OrderByDescending(t => t.CreatedAt).ToList());
@@ -74,5 +75,20 @@ internal sealed class InMemoryTaskRepository : ITaskRepository
 
         _comments.Add(comment);
         return Task.FromResult<Guid?>(comment.Id);
+    }
+
+    public Task<IReadOnlyCollection<TaskActivity>> GetActivityAsync(Guid taskId, CancellationToken cancellationToken = default)
+    {
+        var activity = _activity
+            .Where(item => item.TaskId == taskId)
+            .OrderByDescending(item => item.CreatedAt)
+            .ToList();
+        return Task.FromResult((IReadOnlyCollection<TaskActivity>)activity);
+    }
+
+    public Task AddActivityAsync(TaskActivity activity, CancellationToken cancellationToken = default)
+    {
+        _activity.Add(activity);
+        return Task.CompletedTask;
     }
 }

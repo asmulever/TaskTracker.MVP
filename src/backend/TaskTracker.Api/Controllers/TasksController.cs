@@ -89,6 +89,19 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         return Ok(comments);
     }
 
+    [HttpGet("{id:guid}/activity")]
+    public async Task<IActionResult> GetActivity(Guid id, CancellationToken cancellationToken)
+    {
+        var task = await taskService.GetByIdAsync(id, cancellationToken);
+        if (task is null)
+        {
+            return NotFound();
+        }
+
+        var activity = await taskService.GetActivityAsync(id, cancellationToken);
+        return Ok(activity);
+    }
+
     [HttpPost("{id:guid}/comments")]
     public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateTaskCommentRequest request, CancellationToken cancellationToken)
     {

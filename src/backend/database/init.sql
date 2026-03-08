@@ -105,3 +105,19 @@ BEGIN
         ON dbo.TaskComments (TaskId, CreatedAt);
 END
 GO
+
+IF OBJECT_ID('dbo.TaskActivity', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.TaskActivity
+    (
+        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+        TaskId UNIQUEIDENTIFIER NOT NULL,
+        Action NVARCHAR(80) NOT NULL,
+        Detail NVARCHAR(1000) NOT NULL,
+        CreatedAt DATETIME2 NOT NULL
+    );
+
+    CREATE INDEX IX_TaskActivity_TaskId_CreatedAt
+        ON dbo.TaskActivity (TaskId, CreatedAt DESC);
+END
+GO

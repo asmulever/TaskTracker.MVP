@@ -214,6 +214,50 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return comment.Id;
     }
 
+    public async Task<IReadOnlyCollection<TaskActivity>> GetActivityAsync(Guid taskId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT Id, TaskId, Action, Detail, CreatedAt
+            FROM dbo.TaskActivity
+            WHERE TaskId = @TaskId
+            ORDER BY CreatedAt DESC;
+            """;
+
+        using var connection = connectionFactory.CreateConnection();
+        var rows = await connection.QueryAsync<TaskActivityRecord>(
+            new CommandDefinition(sql, new { TaskId = taskId }, cancellationToken: cancellationToken));
+
+        return rows.Select(static row => new TaskActivity
+        {
+            Id = row.Id,
+            TaskId = row.TaskId,
+            Action = row.Action,
+            Detail = row.Detail,
+            CreatedAt = row.CreatedAt
+        }).ToArray();
+    }
+
+    public async Task AddActivityAsync(TaskActivity activity, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            INSERT INTO dbo.TaskActivity (Id, TaskId, Action, Detail, CreatedAt)
+            VALUES (@Id, @TaskId, @Action, @Detail, @CreatedAt);
+            """;
+
+        using var connection = connectionFactory.CreateConnection();
+        await connection.ExecuteAsync(new CommandDefinition(
+            sql,
+            new
+            {
+                activity.Id,
+                activity.TaskId,
+                activity.Action,
+                activity.Detail,
+                activity.CreatedAt
+            },
+            cancellationToken: cancellationToken));
+    }
+
     private static TaskItem Map(TaskRecord record, List<string> labels)
     {
         if (!Enum.TryParse<DomainTaskStatus>(record.Status, ignoreCase: true, out var status))
@@ -328,6 +372,15 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         public Guid Id { get; init; }
         public Guid TaskId { get; init; }
         public string Content { get; init; } = string.Empty;
+        public DateTime CreatedAt { get; init; }
+    }
+
+    private sealed class TaskActivityRecord
+    {
+        public Guid Id { get; init; }
+        public Guid TaskId { get; init; }
+        public string Action { get; init; } = string.Empty;
+        public string Detail { get; init; } = string.Empty;
         public DateTime CreatedAt { get; init; }
     }
 }

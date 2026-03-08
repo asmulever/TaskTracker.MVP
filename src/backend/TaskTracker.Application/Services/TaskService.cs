@@ -31,7 +31,9 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
             Labels = NormalizeLabels(request.Labels)
         };
 
-        return await taskRepository.CreateAsync(task, cancellationToken);
+        var id = await taskRepository.CreateAsync(task, cancellationToken);
+        await RegisterActivityAsync(id, "TaskCreated", "Task created.", cancellationToken);
+        return id;
     }
 
     public async Task<bool> UpdateAsync(Guid id, UpdateTaskRequest request, CancellationToken cancellationToken = default)
@@ -52,11 +54,25 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         existing.DueDate = request.TargetDueDate ?? request.DueDate;
         existing.Labels = NormalizeLabels(request.Labels);
 
-        return await taskRepository.UpdateAsync(existing, cancellationToken);
+        var updated = await taskRepository.UpdateAsync(existing, cancellationToken);
+        if (updated)
+        {
+            await RegisterActivityAsync(id, "TaskUpdated", "Task data updated.", cancellationToken);
+        }
+
+        return updated;
     }
 
-    public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
-        => taskRepository.DeleteAsync(id, cancellationToken);
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var deleted = await taskRepository.DeleteAsync(id, cancellationToken);
+        if (deleted)
+        {
+            await RegisterActivityAsync(id, "TaskDeleted", "Task deleted.", cancellationToken);
+        }
+
+        return deleted;
+    }
 
     public async Task<bool> UpdateStatusAsync(Guid id, UpdateTaskStatusRequest request, CancellationToken cancellationToken = default)
     {
@@ -71,11 +87,24 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
             throw new ArgumentException($"Invalid transition from {existing.Status} to {request.Status}.", nameof(request.Status));
         }
 
-        return await taskRepository.UpdateStatusAsync(id, request.Status, cancellationToken);
+        var changed = await taskRepository.UpdateStatusAsync(id, request.Status, cancellationToken);
+        if (changed)
+        {
+            await RegisterActivityAsync(
+                id,
+                "StatusChanged",
+                $"Status changed from {existing.Status} to {request.Status}.",
+                cancellationToken);
+        }
+
+        return changed;
     }
 
     public Task<IReadOnlyCollection<TaskComment>> GetCommentsAsync(Guid taskId, CancellationToken cancellationToken = default)
         => taskRepository.GetCommentsAsync(taskId, cancellationToken);
+
+    public Task<IReadOnlyCollection<TaskActivity>> GetActivityAsync(Guid taskId, CancellationToken cancellationToken = default)
+        => taskRepository.GetActivityAsync(taskId, cancellationToken);
 
     public async Task<Guid?> AddCommentAsync(Guid taskId, CreateTaskCommentRequest request, CancellationToken cancellationToken = default)
     {
@@ -92,7 +121,25 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
             CreatedAt = DateTime.UtcNow
         };
 
-        return await taskRepository.AddCommentAsync(comment, cancellationToken);
+        var commentId = await taskRepository.AddCommentAsync(comment, cancellationToken);
+        if (commentId is not null)
+        {
+            await RegisterActivityAsync(taskId, "CommentAdded", "Comment added.", cancellationToken);
+        }
+
+        return commentId;
+    }
+
+    private Task RegisterActivityAsync(Guid taskId, string action, string detail, CancellationToken cancellationToken)
+    {
+        return taskRepository.AddActivityAsync(new TaskActivity
+        {
+            Id = Guid.NewGuid(),
+            TaskId = taskId,
+            Action = action,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow
+        }, cancellationToken);
     }
 
     private static bool CanTransition(TaskStatus current, TaskStatus next)
