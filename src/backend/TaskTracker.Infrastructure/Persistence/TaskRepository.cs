@@ -1,6 +1,7 @@
 using Dapper;
 using TaskTracker.Application.Abstractions;
 using TaskTracker.Domain.Entities;
+using DomainTaskPriority = TaskTracker.Domain.Enums.TaskPriority;
 using DomainTaskStatus = TaskTracker.Domain.Enums.TaskStatus;
 
 namespace TaskTracker.Infrastructure.Persistence;
@@ -14,6 +15,9 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
                    Title,
                    Description,
                    Status,
+                   Priority,
+                   TargetStartDate,
+                   TargetDueDate,
                    DueDate,
                    CreatedAt
             FROM dbo.Tasks
@@ -32,6 +36,9 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
                    Title,
                    Description,
                    Status,
+                   Priority,
+                   TargetStartDate,
+                   TargetDueDate,
                    DueDate,
                    CreatedAt
             FROM dbo.Tasks
@@ -48,8 +55,8 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
     public async Task<Guid> CreateAsync(TaskItem task, CancellationToken cancellationToken = default)
     {
         const string sql = """
-            INSERT INTO dbo.Tasks (Id, Title, Description, Status, DueDate, CreatedAt)
-            VALUES (@Id, @Title, @Description, @Status, @DueDate, @CreatedAt);
+            INSERT INTO dbo.Tasks (Id, Title, Description, Status, Priority, TargetStartDate, TargetDueDate, DueDate, CreatedAt)
+            VALUES (@Id, @Title, @Description, @Status, @Priority, @TargetStartDate, @TargetDueDate, @DueDate, @CreatedAt);
             """;
 
         using var connection = connectionFactory.CreateConnection();
@@ -61,6 +68,9 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
                 task.Title,
                 task.Description,
                 Status = task.Status.ToString(),
+                Priority = task.Priority.ToString(),
+                task.TargetStartDate,
+                task.TargetDueDate,
                 task.DueDate,
                 task.CreatedAt
             },
@@ -75,6 +85,9 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
             UPDATE dbo.Tasks
             SET Title = @Title,
                 Description = @Description,
+                Priority = @Priority,
+                TargetStartDate = @TargetStartDate,
+                TargetDueDate = @TargetDueDate,
                 DueDate = @DueDate
             WHERE Id = @Id;
             """;
@@ -87,6 +100,9 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
                 task.Id,
                 task.Title,
                 task.Description,
+                Priority = task.Priority.ToString(),
+                task.TargetStartDate,
+                task.TargetDueDate,
                 task.DueDate
             },
             cancellationToken: cancellationToken));
@@ -128,7 +144,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
     {
         if (!Enum.TryParse<DomainTaskStatus>(record.Status, ignoreCase: true, out var status))
         {
-            status = DomainTaskStatus.Todo;
+            status = DomainTaskStatus.Created;
+        }
+
+        if (!Enum.TryParse<DomainTaskPriority>(record.Priority, ignoreCase: true, out var priority))
+        {
+            priority = DomainTaskPriority.Medium;
         }
 
         return new TaskItem
@@ -137,6 +158,9 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
             Title = record.Title,
             Description = record.Description,
             Status = status,
+            Priority = priority,
+            TargetStartDate = record.TargetStartDate,
+            TargetDueDate = record.TargetDueDate,
             DueDate = record.DueDate,
             CreatedAt = record.CreatedAt
         };
@@ -148,6 +172,9 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         public string Title { get; init; } = string.Empty;
         public string Description { get; init; } = string.Empty;
         public string Status { get; init; } = string.Empty;
+        public string Priority { get; init; } = string.Empty;
+        public DateTime? TargetStartDate { get; init; }
+        public DateTime? TargetDueDate { get; init; }
         public DateTime? DueDate { get; init; }
         public DateTime CreatedAt { get; init; }
     }

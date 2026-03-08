@@ -21,7 +21,11 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
             Id = Guid.NewGuid(),
             Title = request.Title.Trim(),
             Description = request.Description?.Trim() ?? string.Empty,
-            DueDate = request.DueDate,
+            Status = TaskTracker.Domain.Enums.TaskStatus.Created,
+            Priority = request.Priority,
+            TargetStartDate = request.TargetStartDate,
+            TargetDueDate = request.TargetDueDate ?? request.DueDate,
+            DueDate = request.TargetDueDate ?? request.DueDate,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -40,7 +44,10 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
 
         existing.Title = request.Title.Trim();
         existing.Description = request.Description?.Trim() ?? string.Empty;
-        existing.DueDate = request.DueDate;
+        existing.Priority = request.Priority;
+        existing.TargetStartDate = request.TargetStartDate;
+        existing.TargetDueDate = request.TargetDueDate ?? request.DueDate;
+        existing.DueDate = request.TargetDueDate ?? request.DueDate;
 
         return await taskRepository.UpdateAsync(existing, cancellationToken);
     }

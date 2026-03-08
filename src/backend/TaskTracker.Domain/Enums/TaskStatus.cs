@@ -2,7 +2,12 @@ namespace TaskTracker.Domain.Enums;
 
 public enum TaskStatus
 {
-    Todo = 0,
-    Doing = 1,
-    Done = 2
+    Created = 0,
+    Planned = 1,
+    InProgress = 2,
+    Blocked = 3,
+    Done = 4,
+    Archived = 5,
+    Todo = Created,
+    Doing = InProgress
 }
