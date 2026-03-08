@@ -575,11 +575,11 @@ function App() {
               className="btn ghost theme-toggle"
               onClick={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
               type="button"
-              aria-label={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
-              title={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
+              aria-label={theme === "light" ? "Cambiar a tema Abyss" : "Cambiar a tema Light High Contrast"}
+              title={theme === "light" ? "Cambiar a tema Abyss" : "Cambiar a tema Light High Contrast"}
             >
               <span className="theme-icon" aria-hidden="true">{theme === "light" ? "🌙" : "☀"}</span>
-              <span>{theme === "light" ? "Modo oscuro" : "Modo claro"}</span>
+              <span>{theme === "light" ? "Tema Abyss" : "Tema Light HC"}</span>
             </button>
             <button
               className="btn ghost help-circle-btn"
