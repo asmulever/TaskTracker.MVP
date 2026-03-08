@@ -6,7 +6,7 @@ Con el devcontainer activo, la infraestructura levanta:
 - Backend (.NET)
 - SQL Server
 
-URLs desde host:
+URLs desde host (por defecto):
 
 - Frontend: `http://localhost:${HOST_UI_PORT}`
 - API directa: `http://localhost:${HOST_API_PORT}`
