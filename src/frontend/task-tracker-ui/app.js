@@ -1,22 +1,22 @@
 const { useEffect, useMemo, useState } = React;
 
-const STATUS = ["Created", "Planned", "InProgress", "Blocked", "Done", "Archived"];
+const STATUS = ["Todo", "Doing", "Done"];
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATUS_LABELS = {
-  Created: "Created",
-  Planned: "Planned",
-  InProgress: "InProgress",
-  Blocked: "Blocked",
+  Todo: "Todo",
+  Doing: "Doing",
   Done: "Done",
-  Archived: "Archived"
 };
 const PRIORITY = ["Low", "Medium", "High", "Critical"];
 const ALLOWED_TRANSITIONS = {
-  Created: ["Planned", "Archived"],
-  Planned: ["InProgress", "Blocked", "Archived"],
-  InProgress: ["Blocked", "Done", "Archived"],
-  Blocked: ["Planned", "InProgress", "Archived"],
-  Done: ["Archived"],
-  Archived: []
+  Todo: ["Doing"],
+  Doing: ["Done"],
+  Done: []
+};
+const STATUS_ORDER = {
+  Todo: 0,
+  Doing: 1,
+  Done: 2
 };
 const THEME_COOKIE = "task_theme";
 
@@ -56,11 +56,19 @@ function formatDate(dateValue) {
   return date.toLocaleDateString("es-CL");
 }
 
+function formatDateTime(dateValue) {
+  if (!dateValue) return "Sin fecha";
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "Sin fecha";
+  return date.toLocaleString("es-CL");
+}
+
 function normalizeStatus(status) {
   if (STATUS.includes(status)) return status;
-  if (status === "Todo") return "Created";
-  if (status === "Doing") return "InProgress";
-  return "Created";
+  if (status === "Created" || status === "Planned") return "Todo";
+  if (status === "InProgress" || status === "Blocked") return "Doing";
+  if (status === "Archived") return "Done";
+  return "Todo";
 }
 
 function parseLabels(labelsText) {
@@ -80,7 +88,7 @@ function emptyForm() {
     targetStartDate: "",
     targetDueDate: "",
     labelsText: "",
-    status: "Created"
+    status: "Todo"
   };
 }
 
@@ -89,9 +97,36 @@ function canMoveTo(current, next) {
   return (ALLOWED_TRANSITIONS[current] || []).includes(next);
 }
 
+function isBackwardTransition(current, next) {
+  if (!(current in STATUS_ORDER) || !(next in STATUS_ORDER)) return false;
+  return STATUS_ORDER[next] < STATUS_ORDER[current];
+}
+
+function confirmStatusChange(current, next) {
+  if (!isBackwardTransition(current, next)) return true;
+
+  return window.confirm(
+    "Esta accion no es recomendada por consistencia de datos y puede romper el historial de tareas.\n\nAceptar: cambiar la tarea de todas formas.\nCancelar: abortar la accion."
+  );
+}
+
+function normalizeId(id) {
+  return typeof id === "string" ? id.trim() : String(id ?? "").trim();
+}
+
+function isValidTaskId(id) {
+  return UUID_REGEX.test(normalizeId(id));
+}
+
 function nextStatus(current) {
   const next = ALLOWED_TRANSITIONS[current] || [];
   return next.length > 0 ? next[0] : null;
+}
+
+function runCardAction(event, action) {
+  event.preventDefault();
+  event.stopPropagation();
+  action();
 }
 
 function App() {
@@ -111,6 +146,8 @@ function App() {
   const [activity, setActivity] = useState([]);
   const [commentText, setCommentText] = useState("");
   const [isContextLoading, setIsContextLoading] = useState(false);
+  const [contextTab, setContextTab] = useState("comments");
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
   const isEditing = form.id !== null;
 
@@ -131,13 +168,11 @@ function App() {
 
   const stats = useMemo(() => {
     const total = tasks.length;
-    const created = tasks.filter((t) => t.status === "Created").length;
-    const planned = tasks.filter((t) => t.status === "Planned").length;
-    const inProgress = tasks.filter((t) => t.status === "InProgress").length;
-    const blocked = tasks.filter((t) => t.status === "Blocked").length;
+    const todo = tasks.filter((t) => t.status === "Todo").length;
+    const doing = tasks.filter((t) => t.status === "Doing").length;
     const done = tasks.filter((t) => t.status === "Done").length;
     const progress = total === 0 ? 0 : Math.round((done / total) * 100);
-    return { total, created, planned, inProgress, blocked, done, progress };
+    return { total, todo, doing, done, progress };
   }, [tasks]);
 
   const filteredTasks = useMemo(() => {
@@ -179,11 +214,20 @@ function App() {
       ...options
     });
 
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    const isJsonResponse = contentType.includes("application/json") || contentType.includes("+json");
+
     if (!response.ok) {
       let message = "No se pudo completar la operación";
       try {
         const text = await response.text();
-        if (text) message = text;
+        if (text) {
+          if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+            message = "El servidor devolvió HTML en vez de JSON. Revisa la URL del backend.";
+          } else {
+            message = text;
+          }
+        }
       } catch {
         // noop
       }
@@ -191,6 +235,14 @@ function App() {
     }
 
     if (response.status === 204) return null;
+    if (!isJsonResponse) {
+      const text = await response.text();
+      if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+        throw new Error("El endpoint devolvió HTML en vez de JSON. Verifica que la ruta exista en backend.");
+      }
+      throw new Error("Respuesta inválida del servidor (se esperaba JSON).");
+    }
+
     return response.json();
   }
 
@@ -201,6 +253,7 @@ function App() {
       const normalized = Array.isArray(data)
         ? data.map((task) => ({
             ...task,
+            id: normalizeId(task.id),
             status: normalizeStatus(task.status),
             labels: Array.isArray(task.labels) ? task.labels : [],
             priority: PRIORITY.includes(task.priority) ? task.priority : "Medium"
@@ -215,6 +268,13 @@ function App() {
   }
 
   async function loadTaskContext(taskId) {
+    if (!isValidTaskId(taskId)) {
+      setComments([]);
+      setActivity([]);
+      toast("La tarea seleccionada tiene un ID inválido para consultar contexto.", false);
+      return;
+    }
+
     setIsContextLoading(true);
     try {
       const [commentData, activityData] = await Promise.all([
@@ -241,8 +301,20 @@ function App() {
     setForm(emptyForm());
   }
 
+  function openCreateForm() {
+    resetForm();
+    setIsFormOpen(true);
+  }
+
+  function closeFormModal() {
+    setIsFormOpen(false);
+    resetForm();
+  }
+
   function startEdit(task) {
-    setSelectedTaskId(task.id);
+    setSelectedTaskId(normalizeId(task.id));
+    setContextTab("comments");
+    setIsFormOpen(true);
     setForm({
       id: task.id,
       title: task.title || "",
@@ -251,7 +323,7 @@ function App() {
       targetStartDate: task.targetStartDate ? new Date(task.targetStartDate).toISOString().slice(0, 10) : "",
       targetDueDate: (task.targetDueDate || task.dueDate) ? new Date(task.targetDueDate || task.dueDate).toISOString().slice(0, 10) : "",
       labelsText: (task.labels || []).join(", "),
-      status: task.status || "Created"
+      status: task.status || "Todo"
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -289,6 +361,11 @@ function App() {
         });
 
         if (previousTask && previousTask.status !== form.status) {
+          if (!confirmStatusChange(previousTask.status, form.status)) {
+            setIsBusy(false);
+            return;
+          }
+
           await request(`/tasks/${form.id}/status`, {
             method: "PATCH",
             body: JSON.stringify({ status: form.status })
@@ -305,6 +382,7 @@ function App() {
       }
 
       resetForm();
+      setIsFormOpen(false);
       await loadTasks();
     } catch (error) {
       toast(error.message, false);
@@ -319,7 +397,7 @@ function App() {
     setIsBusy(true);
     try {
       await request(`/tasks/${id}`, { method: "DELETE" });
-      if (form.id === id) resetForm();
+      if (form.id === id) closeFormModal();
       if (selectedTaskId === id) {
         setSelectedTaskId(null);
         setComments([]);
@@ -337,8 +415,13 @@ function App() {
   async function updateTaskStatus(id, status) {
     const task = tasks.find((x) => x.id === id);
     if (!task) return;
-    if (!canMoveTo(task.status, status)) {
+
+    if (!canMoveTo(task.status, status) && !isBackwardTransition(task.status, status)) {
       toast(`Transición inválida: ${task.status} -> ${status}`, false);
+      return;
+    }
+
+    if (!confirmStatusChange(task.status, status)) {
       return;
     }
 
@@ -361,10 +444,12 @@ function App() {
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === targetStatus) return;
 
-    if (!canMoveTo(task.status, targetStatus)) {
+    if (!canMoveTo(task.status, targetStatus) && !isBackwardTransition(task.status, targetStatus)) {
       toast(`Transición inválida: ${task.status} -> ${targetStatus}`, false);
       return;
     }
+
+    if (!confirmStatusChange(task.status, targetStatus)) return;
 
     const previousTasks = tasks;
     setTasks((current) =>
@@ -416,7 +501,10 @@ function App() {
   }
 
   async function addComment() {
-    if (!selectedTaskId) return;
+    if (!selectedTaskId || !isValidTaskId(selectedTaskId)) {
+      toast("Selecciona una tarea válida", false);
+      return;
+    }
     if (!commentText.trim()) {
       toast("El comentario es obligatorio", false);
       return;
@@ -439,6 +527,14 @@ function App() {
     }
   }
 
+  function cancelCommentDraft() {
+    setCommentText("");
+    setContextTab("comments");
+    setComments([]);
+    setActivity([]);
+    setSelectedTaskId(null);
+  }
+
   const selectedTask = useMemo(
     () => tasks.find((task) => task.id === selectedTaskId) || null,
     [tasks, selectedTaskId]
@@ -451,24 +547,27 @@ function App() {
           <p className="label">Task Tracker Pro</p>
           <h1>Operación de tareas</h1>
         </div>
-        <button
-          className="btn ghost theme-toggle"
-          onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-          type="button"
-          aria-label={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
-          title={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
-        >
-          <span className="theme-icon" aria-hidden="true">{theme === "light" ? "🌙" : "☀"}</span>
-          <span>{theme === "light" ? "Modo oscuro" : "Modo claro"}</span>
-        </button>
+        <div className="header-actions">
+          <button className="btn primary" type="button" onClick={openCreateForm}>
+            + Nueva tarea
+          </button>
+          <button
+            className="btn ghost theme-toggle"
+            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+            type="button"
+            aria-label={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
+            title={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
+          >
+            <span className="theme-icon" aria-hidden="true">{theme === "light" ? "🌙" : "☀"}</span>
+            <span>{theme === "light" ? "Modo oscuro" : "Modo claro"}</span>
+          </button>
+        </div>
       </header>
 
       <section className="metrics">
         <article className="metric"><span>Total</span><strong>{stats.total}</strong></article>
-        <article className="metric"><span>Created</span><strong>{stats.created}</strong></article>
-        <article className="metric"><span>Planned</span><strong>{stats.planned}</strong></article>
-        <article className="metric"><span>InProgress</span><strong>{stats.inProgress}</strong></article>
-        <article className="metric"><span>Blocked</span><strong>{stats.blocked}</strong></article>
+        <article className="metric"><span>Todo</span><strong>{stats.todo}</strong></article>
+        <article className="metric"><span>Doing</span><strong>{stats.doing}</strong></article>
         <article className="metric"><span>Done</span><strong>{stats.done}</strong></article>
         <article className="metric wide">
           <span>Progreso</span>
@@ -481,93 +580,6 @@ function App() {
       </section>
 
       <section className="main-grid">
-        <aside className="panel">
-          <h2>{isEditing ? "Editar tarea" : "Crear tarea"}</h2>
-          <form onSubmit={saveTask} className="task-form">
-            <label>Título</label>
-            <input
-              value={form.title}
-              onChange={(e) => onFormField("title", e.target.value)}
-              maxLength={200}
-              placeholder="Ej: Ajustar API de reportes"
-              required
-            />
-
-            <label>Descripción</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => onFormField("description", e.target.value)}
-              maxLength={1000}
-              placeholder="Detalle breve del trabajo"
-            />
-
-            <div className="row two">
-              <div>
-                <label>Prioridad</label>
-                <select value={form.priority} onChange={(e) => onFormField("priority", e.target.value)}>
-                  {PRIORITY.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label>Estado</label>
-                <select
-                  value={form.status}
-                  onChange={(e) => onFormField("status", e.target.value)}
-                  disabled={!isEditing}
-                >
-                  {STATUS.map((s) => (
-                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="row two">
-              <div>
-                <label>Inicio objetivo</label>
-                <input
-                  type="date"
-                  value={form.targetStartDate}
-                  onChange={(e) => onFormField("targetStartDate", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label>Fecha objetivo</label>
-                <input
-                  type="date"
-                  value={form.targetDueDate}
-                  onChange={(e) => onFormField("targetDueDate", e.target.value)}
-                />
-              </div>
-            </div>
-
-            <label>Etiquetas (separadas por coma)</label>
-            <input
-              value={form.labelsText}
-              onChange={(e) => onFormField("labelsText", e.target.value)}
-              maxLength={350}
-              placeholder="backend, api, urgente"
-            />
-
-            <small className="hint">{form.title.length}/200 caracteres</small>
-
-            <div className="row actions">
-              {isEditing && (
-                <button className="btn ghost" type="button" onClick={resetForm} disabled={isBusy}>
-                  Cancelar edición
-                </button>
-              )}
-              <button className="btn primary" type="submit" disabled={isBusy}>
-                {isBusy ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear tarea"}
-              </button>
-            </div>
-          </form>
-        </aside>
-
         <section className="board-wrapper">
           <div className="toolbar">
             <input
@@ -614,7 +626,7 @@ function App() {
 
                         return (
                           <li
-                            className={`card ${dragTaskId === task.id ? "dragging" : ""}`}
+                            className={`card ${dragTaskId === task.id ? "dragging" : ""} ${selectedTaskId === task.id ? "selected" : ""}`}
                             key={task.id}
                             draggable={!isBusy}
                             onDragStart={(event) => onTaskDragStart(event, task.id)}
@@ -622,16 +634,30 @@ function App() {
                           >
                             <h4>{task.title}</h4>
                             <p>{task.description || "Sin descripción"}</p>
-                            <small>Prioridad: {task.priority || "Medium"}</small>
                             <small>Objetivo: {formatDate(dueDate)}</small>
+                            <div className="card-meta-row">
+                              <span className={`pill priority-${(task.priority || "Medium").toLowerCase()}`}>
+                                {task.priority || "Medium"}
+                              </span>
+                              <span className="pill status">{task.status}</span>
+                            </div>
                             {(task.labels || []).length > 0 && (
-                              <small>Etiquetas: {(task.labels || []).join(", ")}</small>
+                              <div className="label-row">
+                                {(task.labels || []).slice(0, 4).map((label) => (
+                                  <span className="pill label" key={`${task.id}-${label}`}>{label}</span>
+                                ))}
+                              </div>
                             )}
 
                             <div className="card-actions">
                               <button
                                 className="btn ghost icon-btn"
-                                onClick={() => setSelectedTaskId(task.id)}
+                                type="button"
+                                draggable={false}
+                                onClick={(event) => runCardAction(event, () => {
+                                  setSelectedTaskId(normalizeId(task.id));
+                                  setContextTab("comments");
+                                })}
                                 disabled={isBusy}
                                 aria-label="Ver contexto"
                                 title="Ver contexto"
@@ -640,7 +666,9 @@ function App() {
                               </button>
                               <button
                                 className="btn ghost icon-btn"
-                                onClick={() => startEdit(task)}
+                                type="button"
+                                draggable={false}
+                                onClick={(event) => runCardAction(event, () => startEdit(task))}
                                 disabled={isBusy}
                                 aria-label="Editar tarea"
                                 title="Editar tarea"
@@ -650,7 +678,9 @@ function App() {
                               {actionStatus && (
                                 <button
                                   className="btn ghost icon-btn"
-                                  onClick={() => updateTaskStatus(task.id, actionStatus)}
+                                  type="button"
+                                  draggable={false}
+                                  onClick={(event) => runCardAction(event, () => updateTaskStatus(task.id, actionStatus))}
                                   disabled={isBusy}
                                   aria-label={`Mover a ${actionStatus}`}
                                   title={`Mover a ${actionStatus}`}
@@ -660,7 +690,9 @@ function App() {
                               )}
                               <button
                                 className="btn danger icon-btn"
-                                onClick={() => deleteTask(task.id)}
+                                type="button"
+                                draggable={false}
+                                onClick={(event) => runCardAction(event, () => deleteTask(task.id))}
                                 disabled={isBusy}
                                 aria-label="Eliminar tarea"
                                 title="Eliminar tarea"
@@ -681,7 +713,15 @@ function App() {
           <section className="context-panel">
             <div className="context-head">
               <h3>Contexto</h3>
-              {selectedTask && <small>{selectedTask.title}</small>}
+              {selectedTask && (
+                <div className="context-task-meta">
+                  <small>{selectedTask.title}</small>
+                  <span className={`pill priority-${(selectedTask.priority || "Medium").toLowerCase()}`}>
+                    {selectedTask.priority || "Medium"}
+                  </span>
+                  <span className="pill status">{selectedTask.status}</span>
+                </div>
+              )}
             </div>
 
             {!selectedTask ? (
@@ -695,47 +735,63 @@ function App() {
                     placeholder="Agregar comentario"
                     maxLength={1000}
                   />
-                  <button className="btn primary" type="button" onClick={addComment} disabled={isBusy}>
-                    Publicar comentario
-                  </button>
+                  <div className="context-comment-actions">
+                    <button className="btn primary" type="button" onClick={addComment} disabled={isBusy}>
+                      Publicar comentario
+                    </button>
+                    <button className="btn ghost" type="button" onClick={cancelCommentDraft} disabled={isBusy}>
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
 
                 {isContextLoading ? (
                   <p className="context-empty">Cargando contexto...</p>
                 ) : (
-                  <div className="context-grid">
-                    <article>
-                      <h4>Comentarios</h4>
-                      {comments.length === 0 ? (
+                  <div className="context-tabs-wrap">
+                    <div className="context-tabs">
+                      <button
+                        className={`btn ghost tab-btn ${contextTab === "comments" ? "active" : ""}`}
+                        type="button"
+                        onClick={() => setContextTab("comments")}
+                      >
+                        Comentarios ({comments.length})
+                      </button>
+                      <button
+                        className={`btn ghost tab-btn ${contextTab === "activity" ? "active" : ""}`}
+                        type="button"
+                        onClick={() => setContextTab("activity")}
+                      >
+                        Actividad ({activity.length})
+                      </button>
+                    </div>
+
+                    {contextTab === "comments" ? (
+                      comments.length === 0 ? (
                         <p className="context-empty">Sin comentarios.</p>
                       ) : (
                         <ul className="context-list">
                           {comments.map((comment) => (
                             <li key={comment.id}>
                               <p>{comment.content}</p>
-                              <small>{formatDate(comment.createdAt)}</small>
+                              <small>{formatDateTime(comment.createdAt)}</small>
                             </li>
                           ))}
                         </ul>
-                      )}
-                    </article>
-
-                    <article>
-                      <h4>Actividad</h4>
-                      {activity.length === 0 ? (
-                        <p className="context-empty">Sin actividad.</p>
-                      ) : (
-                        <ul className="context-list">
-                          {activity.map((item) => (
-                            <li key={item.id}>
-                              <p>{item.action}</p>
-                              <small>{item.detail}</small>
-                              <small>{formatDate(item.createdAt)}</small>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </article>
+                      )
+                    ) : activity.length === 0 ? (
+                      <p className="context-empty">Sin actividad.</p>
+                    ) : (
+                      <ul className="context-list">
+                        {activity.map((item) => (
+                          <li key={item.id}>
+                            <p>{item.action}</p>
+                            <small>{item.detail}</small>
+                            <small>{formatDateTime(item.createdAt)}</small>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
               </>
@@ -743,6 +799,100 @@ function App() {
           </section>
         </section>
       </section>
+
+      {isFormOpen && (
+        <div className="form-overlay" onClick={closeFormModal}>
+          <aside className="panel modal-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h2>{isEditing ? "Editar tarea" : "Crear tarea"}</h2>
+              <button className="btn ghost icon-btn" type="button" onClick={closeFormModal} aria-label="Cerrar formulario" title="Cerrar formulario">
+                <span aria-hidden="true">✕</span>
+              </button>
+            </div>
+            <form onSubmit={saveTask} className="task-form">
+              <label>Título</label>
+              <input
+                value={form.title}
+                onChange={(e) => onFormField("title", e.target.value)}
+                maxLength={200}
+                placeholder="Ej: Ajustar API de reportes"
+                required
+              />
+
+              <label>Descripción</label>
+              <textarea
+                value={form.description}
+                onChange={(e) => onFormField("description", e.target.value)}
+                maxLength={1000}
+                placeholder="Detalle breve del trabajo"
+              />
+
+              <div className="row two">
+                <div>
+                  <label>Prioridad</label>
+                  <select value={form.priority} onChange={(e) => onFormField("priority", e.target.value)}>
+                    {PRIORITY.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label>Estado</label>
+                  <select
+                    value={form.status}
+                    onChange={(e) => onFormField("status", e.target.value)}
+                    disabled={!isEditing}
+                  >
+                    {STATUS.map((s) => (
+                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="row two">
+                <div>
+                  <label>Inicio objetivo</label>
+                  <input
+                    type="date"
+                    value={form.targetStartDate}
+                    onChange={(e) => onFormField("targetStartDate", e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label>Fecha objetivo</label>
+                  <input
+                    type="date"
+                    value={form.targetDueDate}
+                    onChange={(e) => onFormField("targetDueDate", e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <label>Etiquetas (separadas por coma)</label>
+              <input
+                value={form.labelsText}
+                onChange={(e) => onFormField("labelsText", e.target.value)}
+                maxLength={350}
+                placeholder="backend, api, urgente"
+              />
+
+              <small className="hint">{form.title.length}/200 caracteres</small>
+
+              <div className="row actions">
+                <button className="btn ghost" type="button" onClick={closeFormModal} disabled={isBusy}>
+                  Cancelar
+                </button>
+                <button className="btn primary" type="submit" disabled={isBusy}>
+                  {isBusy ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear tarea"}
+                </button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      )}
 
       {isBusy && (
         <div className="overlay">

@@ -22,7 +22,7 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
             Id = Guid.NewGuid(),
             Title = request.Title.Trim(),
             Description = request.Description?.Trim() ?? string.Empty,
-            Status = TaskStatus.Created,
+            Status = TaskTracker.Domain.Enums.TaskStatus.Todo,
             Priority = request.Priority,
             TargetStartDate = request.TargetStartDate,
             TargetDueDate = request.TargetDueDate ?? request.DueDate,
@@ -144,27 +144,10 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
 
     private static bool CanTransition(TaskStatus current, TaskStatus next)
     {
-        if (current == next)
-        {
-            return true;
-        }
-
-        return (current, next) switch
-        {
-            (TaskStatus.Created, TaskStatus.Planned) => true,
-            (TaskStatus.Created, TaskStatus.Archived) => true,
-            (TaskStatus.Planned, TaskStatus.InProgress) => true,
-            (TaskStatus.Planned, TaskStatus.Blocked) => true,
-            (TaskStatus.Planned, TaskStatus.Archived) => true,
-            (TaskStatus.InProgress, TaskStatus.Blocked) => true,
-            (TaskStatus.InProgress, TaskStatus.Done) => true,
-            (TaskStatus.InProgress, TaskStatus.Archived) => true,
-            (TaskStatus.Blocked, TaskStatus.InProgress) => true,
-            (TaskStatus.Blocked, TaskStatus.Planned) => true,
-            (TaskStatus.Blocked, TaskStatus.Archived) => true,
-            (TaskStatus.Done, TaskStatus.Archived) => true,
-            _ => false
-        };
+        _ = current;
+        _ = next;
+        // Restriction removed: UI handles warning/confirmation for backward moves.
+        return true;
     }
 
     private static List<string> NormalizeLabels(IReadOnlyCollection<string>? labels)

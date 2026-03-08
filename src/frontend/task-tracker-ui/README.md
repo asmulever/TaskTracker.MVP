@@ -5,9 +5,17 @@ Con el devcontainer activo, la infraestructura levanta:
 - Frontend (nginx)
 - Backend (.NET)
 - SQL Server
-- Gateway nginx para exponer al host
 
 URLs desde host:
 
-- UI + API en mismo origen: `http://localhost:5274`
-- API directa (sin frontend): `http://localhost:8080`
+- Frontend: `http://localhost:${HOST_UI_PORT}`
+- API directa: `http://localhost:${HOST_API_PORT}`
+
+Si esos puertos estan ocupados, configura:
+
+- `HOST_UI_PORT`
+- `HOST_API_PORT`
+
+en `.devcontainer/.env`.
+
+La UI usa proxy hacia el backend en `/tasks`, `/openapi` y `/swagger`, asi que no depende del puerto directo de la API para funcionar en el navegador.
