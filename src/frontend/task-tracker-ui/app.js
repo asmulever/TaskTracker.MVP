@@ -1,15 +1,22 @@
 const { useEffect, useMemo, useState } = React;
 
-const STATUS = ["Todo", "Doing", "Done"];
-const STATUS_ALIASES = {
-  Created: "Todo",
-  Planned: "Todo",
-  InProgress: "Doing",
-  Blocked: "Doing",
+const STATUS = ["Created", "Planned", "InProgress", "Blocked", "Done", "Archived"];
+const STATUS_LABELS = {
+  Created: "Created",
+  Planned: "Planned",
+  InProgress: "InProgress",
+  Blocked: "Blocked",
   Done: "Done",
-  Archived: "Done",
-  Todo: "Todo",
-  Doing: "Doing"
+  Archived: "Archived"
+};
+const PRIORITY = ["Low", "Medium", "High", "Critical"];
+const ALLOWED_TRANSITIONS = {
+  Created: ["Planned", "Archived"],
+  Planned: ["InProgress", "Blocked", "Archived"],
+  InProgress: ["Blocked", "Done", "Archived"],
+  Blocked: ["Planned", "InProgress", "Archived"],
+  Done: ["Archived"],
+  Archived: []
 };
 const THEME_COOKIE = "task_theme";
 
@@ -49,18 +56,42 @@ function formatDate(dateValue) {
   return date.toLocaleDateString("es-CL");
 }
 
+function normalizeStatus(status) {
+  if (STATUS.includes(status)) return status;
+  if (status === "Todo") return "Created";
+  if (status === "Doing") return "InProgress";
+  return "Created";
+}
+
+function parseLabels(labelsText) {
+  if (!labelsText) return [];
+  return labelsText
+    .split(",")
+    .map((label) => label.trim())
+    .filter((label) => label.length > 0);
+}
+
 function emptyForm() {
   return {
     id: null,
     title: "",
     description: "",
-    dueDate: "",
-    status: "Todo"
+    priority: "Medium",
+    targetStartDate: "",
+    targetDueDate: "",
+    labelsText: "",
+    status: "Created"
   };
 }
 
-function toUiStatus(status) {
-  return STATUS_ALIASES[status] || "Todo";
+function canMoveTo(current, next) {
+  if (current === next) return true;
+  return (ALLOWED_TRANSITIONS[current] || []).includes(next);
+}
+
+function nextStatus(current) {
+  const next = ALLOWED_TRANSITIONS[current] || [];
+  return next.length > 0 ? next[0] : null;
 }
 
 function App() {
@@ -90,11 +121,13 @@ function App() {
 
   const stats = useMemo(() => {
     const total = tasks.length;
-    const todo = tasks.filter((t) => t.status === "Todo").length;
-    const doing = tasks.filter((t) => t.status === "Doing").length;
+    const created = tasks.filter((t) => t.status === "Created").length;
+    const planned = tasks.filter((t) => t.status === "Planned").length;
+    const inProgress = tasks.filter((t) => t.status === "InProgress").length;
+    const blocked = tasks.filter((t) => t.status === "Blocked").length;
     const done = tasks.filter((t) => t.status === "Done").length;
     const progress = total === 0 ? 0 : Math.round((done / total) * 100);
-    return { total, todo, doing, done, progress };
+    return { total, created, planned, inProgress, blocked, done, progress };
   }, [tasks]);
 
   const filteredTasks = useMemo(() => {
@@ -102,22 +135,25 @@ function App() {
     return tasks.filter((task) => {
       if (filter !== "all" && task.status !== filter) return false;
       if (!term) return true;
-      const text = `${task.title || ""} ${task.description || ""}`.toLowerCase();
+      const labelsText = (task.labels || []).join(" ").toLowerCase();
+      const text = `${task.title || ""} ${task.description || ""} ${labelsText}`.toLowerCase();
       return text.includes(term);
     });
   }, [tasks, search, filter]);
 
   const board = useMemo(() => {
-    const initial = { Todo: [], Doing: [], Done: [] };
+    const initial = Object.fromEntries(STATUS.map((status) => [status, []]));
     filteredTasks.forEach((task) => {
       initial[task.status]?.push(task);
     });
 
     STATUS.forEach((status) => {
       initial[status].sort((a, b) => {
-        const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Number.MAX_SAFE_INTEGER;
-        const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Number.MAX_SAFE_INTEGER;
-        return aDate - bDate;
+        const aDate = a.targetDueDate || a.dueDate;
+        const bDate = b.targetDueDate || b.dueDate;
+        const aTs = aDate ? new Date(aDate).getTime() : Number.MAX_SAFE_INTEGER;
+        const bTs = bDate ? new Date(bDate).getTime() : Number.MAX_SAFE_INTEGER;
+        return aTs - bTs;
       });
     });
 
@@ -153,7 +189,12 @@ function App() {
     try {
       const data = await request("/tasks", { method: "GET", headers: {} });
       const normalized = Array.isArray(data)
-        ? data.map((task) => ({ ...task, status: toUiStatus(task.status) }))
+        ? data.map((task) => ({
+            ...task,
+            status: normalizeStatus(task.status),
+            labels: Array.isArray(task.labels) ? task.labels : [],
+            priority: PRIORITY.includes(task.priority) ? task.priority : "Medium"
+          }))
         : [];
       setTasks(normalized);
     } catch (error) {
@@ -176,8 +217,11 @@ function App() {
       id: task.id,
       title: task.title || "",
       description: task.description || "",
-      dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : "",
-      status: task.status || "Todo"
+      priority: task.priority || "Medium",
+      targetStartDate: task.targetStartDate ? new Date(task.targetStartDate).toISOString().slice(0, 10) : "",
+      targetDueDate: (task.targetDueDate || task.dueDate) ? new Date(task.targetDueDate || task.dueDate).toISOString().slice(0, 10) : "",
+      labelsText: (task.labels || []).join(", "),
+      status: task.status || "Created"
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -193,6 +237,17 @@ function App() {
       return;
     }
 
+    const labels = parseLabels(form.labelsText);
+    const payload = {
+      title,
+      description,
+      priority: form.priority,
+      targetStartDate: form.targetStartDate || null,
+      targetDueDate: form.targetDueDate || null,
+      dueDate: form.targetDueDate || null,
+      labels
+    };
+
     setIsBusy(true);
     try {
       if (isEditing) {
@@ -200,7 +255,7 @@ function App() {
 
         await request(`/tasks/${form.id}`, {
           method: "PUT",
-          body: JSON.stringify({ title, description, dueDate: form.dueDate || null })
+          body: JSON.stringify(payload)
         });
 
         if (previousTask && previousTask.status !== form.status) {
@@ -214,7 +269,7 @@ function App() {
       } else {
         await request("/tasks", {
           method: "POST",
-          body: JSON.stringify({ title, description, dueDate: form.dueDate || null })
+          body: JSON.stringify(payload)
         });
         toast("Tarea creada");
       }
@@ -245,6 +300,13 @@ function App() {
   }
 
   async function updateTaskStatus(id, status) {
+    const task = tasks.find((x) => x.id === id);
+    if (!task) return;
+    if (!canMoveTo(task.status, status)) {
+      toast(`Transición inválida: ${task.status} -> ${status}`, false);
+      return;
+    }
+
     setIsBusy(true);
     try {
       await request(`/tasks/${id}/status`, {
@@ -263,6 +325,11 @@ function App() {
   async function moveTaskToStatus(taskId, targetStatus) {
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === targetStatus) return;
+
+    if (!canMoveTo(task.status, targetStatus)) {
+      toast(`Transición inválida: ${task.status} -> ${targetStatus}`, false);
+      return;
+    }
 
     const previousTasks = tasks;
     setTasks((current) =>
@@ -313,11 +380,6 @@ function App() {
     setDragOverStatus(null);
   }
 
-  function nextStatus(current) {
-    const index = STATUS.indexOf(current);
-    return STATUS[Math.min(index + 1, STATUS.length - 1)];
-  }
-
   return (
     <div className="layout">
       <header className="header">
@@ -339,8 +401,10 @@ function App() {
 
       <section className="metrics">
         <article className="metric"><span>Total</span><strong>{stats.total}</strong></article>
-        <article className="metric"><span>Todo</span><strong>{stats.todo}</strong></article>
-        <article className="metric"><span>Doing</span><strong>{stats.doing}</strong></article>
+        <article className="metric"><span>Created</span><strong>{stats.created}</strong></article>
+        <article className="metric"><span>Planned</span><strong>{stats.planned}</strong></article>
+        <article className="metric"><span>InProgress</span><strong>{stats.inProgress}</strong></article>
+        <article className="metric"><span>Blocked</span><strong>{stats.blocked}</strong></article>
         <article className="metric"><span>Done</span><strong>{stats.done}</strong></article>
         <article className="metric wide">
           <span>Progreso</span>
@@ -375,12 +439,12 @@ function App() {
 
             <div className="row two">
               <div>
-                <label>Fecha límite</label>
-                <input
-                  type="date"
-                  value={form.dueDate}
-                  onChange={(e) => onFormField("dueDate", e.target.value)}
-                />
+                <label>Prioridad</label>
+                <select value={form.priority} onChange={(e) => onFormField("priority", e.target.value)}>
+                  {PRIORITY.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -391,11 +455,39 @@ function App() {
                   disabled={!isEditing}
                 >
                   {STATUS.map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
                   ))}
                 </select>
               </div>
             </div>
+
+            <div className="row two">
+              <div>
+                <label>Inicio objetivo</label>
+                <input
+                  type="date"
+                  value={form.targetStartDate}
+                  onChange={(e) => onFormField("targetStartDate", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label>Fecha objetivo</label>
+                <input
+                  type="date"
+                  value={form.targetDueDate}
+                  onChange={(e) => onFormField("targetDueDate", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <label>Etiquetas (separadas por coma)</label>
+            <input
+              value={form.labelsText}
+              onChange={(e) => onFormField("labelsText", e.target.value)}
+              maxLength={350}
+              placeholder="backend, api, urgente"
+            />
 
             <small className="hint">{form.title.length}/200 caracteres</small>
 
@@ -417,12 +509,12 @@ function App() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por título o descripción"
+              placeholder="Buscar por título, descripción o etiqueta"
             />
             <select value={filter} onChange={(e) => setFilter(e.target.value)}>
               <option value="all">Todos</option>
               {STATUS.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
               ))}
             </select>
           </div>
@@ -444,7 +536,7 @@ function App() {
                   onDrop={(event) => onColumnDrop(event, status)}
                 >
                   <div className="column-head">
-                    <h3>{status}</h3>
+                    <h3>{STATUS_LABELS[status]}</h3>
                     <span>{board[status].length}</span>
                   </div>
 
@@ -452,51 +544,60 @@ function App() {
                     <div className="empty">Sin tareas</div>
                   ) : (
                     <ul className="cards">
-                      {board[status].map((task) => (
-                        <li
-                          className={`card ${dragTaskId === task.id ? "dragging" : ""}`}
-                          key={task.id}
-                          draggable={!isBusy}
-                          onDragStart={(event) => onTaskDragStart(event, task.id)}
-                          onDragEnd={onTaskDragEnd}
-                        >
-                          <h4>{task.title}</h4>
-                          <p>{task.description || "Sin descripción"}</p>
-                          <small>Vence: {formatDate(task.dueDate)}</small>
+                      {board[status].map((task) => {
+                        const actionStatus = nextStatus(task.status);
+                        const dueDate = task.targetDueDate || task.dueDate;
 
-                          <div className="card-actions">
-                            <button
-                              className="btn ghost icon-btn"
-                              onClick={() => startEdit(task)}
-                              disabled={isBusy}
-                              aria-label="Editar tarea"
-                              title="Editar tarea"
-                            >
-                              <span aria-hidden="true">✏</span>
-                            </button>
-                            {task.status !== "Done" && (
+                        return (
+                          <li
+                            className={`card ${dragTaskId === task.id ? "dragging" : ""}`}
+                            key={task.id}
+                            draggable={!isBusy}
+                            onDragStart={(event) => onTaskDragStart(event, task.id)}
+                            onDragEnd={onTaskDragEnd}
+                          >
+                            <h4>{task.title}</h4>
+                            <p>{task.description || "Sin descripción"}</p>
+                            <small>Prioridad: {task.priority || "Medium"}</small>
+                            <small>Objetivo: {formatDate(dueDate)}</small>
+                            {(task.labels || []).length > 0 && (
+                              <small>Etiquetas: {(task.labels || []).join(", ")}</small>
+                            )}
+
+                            <div className="card-actions">
                               <button
                                 className="btn ghost icon-btn"
-                                onClick={() => updateTaskStatus(task.id, nextStatus(task.status))}
+                                onClick={() => startEdit(task)}
                                 disabled={isBusy}
-                                aria-label={`Mover a ${nextStatus(task.status)}`}
-                                title={`Mover a ${nextStatus(task.status)}`}
+                                aria-label="Editar tarea"
+                                title="Editar tarea"
                               >
-                                <span aria-hidden="true">⇢</span>
+                                <span aria-hidden="true">✏</span>
                               </button>
-                            )}
-                            <button
-                              className="btn danger icon-btn"
-                              onClick={() => deleteTask(task.id)}
-                              disabled={isBusy}
-                              aria-label="Eliminar tarea"
-                              title="Eliminar tarea"
-                            >
-                              <span aria-hidden="true">🗑</span>
-                            </button>
-                          </div>
-                        </li>
-                      ))}
+                              {actionStatus && (
+                                <button
+                                  className="btn ghost icon-btn"
+                                  onClick={() => updateTaskStatus(task.id, actionStatus)}
+                                  disabled={isBusy}
+                                  aria-label={`Mover a ${actionStatus}`}
+                                  title={`Mover a ${actionStatus}`}
+                                >
+                                  <span aria-hidden="true">⇢</span>
+                                </button>
+                              )}
+                              <button
+                                className="btn danger icon-btn"
+                                onClick={() => deleteTask(task.id)}
+                                disabled={isBusy}
+                                aria-label="Eliminar tarea"
+                                title="Eliminar tarea"
+                              >
+                                <span aria-hidden="true">🗑</span>
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </article>
