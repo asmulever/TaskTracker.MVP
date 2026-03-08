@@ -6,6 +6,7 @@ namespace TaskTracker.Application.Tests.Support;
 internal sealed class InMemoryTaskRepository : ITaskRepository
 {
     private readonly List<TaskItem> _tasks = [];
+    private readonly List<TaskComment> _comments = [];
 
     public Task<IReadOnlyCollection<TaskItem>> GetAllAsync(CancellationToken cancellationToken = default)
         => Task.FromResult((IReadOnlyCollection<TaskItem>)_tasks.OrderByDescending(t => t.CreatedAt).ToList());
@@ -53,5 +54,25 @@ internal sealed class InMemoryTaskRepository : ITaskRepository
 
         current.Status = status;
         return Task.FromResult(true);
+    }
+
+    public Task<IReadOnlyCollection<TaskComment>> GetCommentsAsync(Guid taskId, CancellationToken cancellationToken = default)
+    {
+        var comments = _comments
+            .Where(comment => comment.TaskId == taskId)
+            .OrderBy(comment => comment.CreatedAt)
+            .ToList();
+        return Task.FromResult((IReadOnlyCollection<TaskComment>)comments);
+    }
+
+    public Task<Guid?> AddCommentAsync(TaskComment comment, CancellationToken cancellationToken = default)
+    {
+        if (_tasks.All(task => task.Id != comment.TaskId))
+        {
+            return Task.FromResult<Guid?>(null);
+        }
+
+        _comments.Add(comment);
+        return Task.FromResult<Guid?>(comment.Id);
     }
 }

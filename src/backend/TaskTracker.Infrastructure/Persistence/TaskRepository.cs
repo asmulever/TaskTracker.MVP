@@ -161,6 +161,59 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return affectedRows > 0;
     }
 
+    public async Task<IReadOnlyCollection<TaskComment>> GetCommentsAsync(Guid taskId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT Id, TaskId, Content, CreatedAt
+            FROM dbo.TaskComments
+            WHERE TaskId = @TaskId
+            ORDER BY CreatedAt ASC;
+            """;
+
+        using var connection = connectionFactory.CreateConnection();
+        var rows = await connection.QueryAsync<TaskCommentRecord>(
+            new CommandDefinition(sql, new { TaskId = taskId }, cancellationToken: cancellationToken));
+
+        return rows.Select(static row => new TaskComment
+        {
+            Id = row.Id,
+            TaskId = row.TaskId,
+            Content = row.Content,
+            CreatedAt = row.CreatedAt
+        }).ToArray();
+    }
+
+    public async Task<Guid?> AddCommentAsync(TaskComment comment, CancellationToken cancellationToken = default)
+    {
+        const string taskExistsSql = "SELECT 1 FROM dbo.Tasks WHERE Id = @TaskId;";
+        const string insertSql = """
+            INSERT INTO dbo.TaskComments (Id, TaskId, Content, CreatedAt)
+            VALUES (@Id, @TaskId, @Content, @CreatedAt);
+            """;
+
+        using var connection = connectionFactory.CreateConnection();
+        var exists = await connection.ExecuteScalarAsync<int?>(
+            new CommandDefinition(taskExistsSql, new { TaskId = comment.TaskId }, cancellationToken: cancellationToken));
+
+        if (exists is null)
+        {
+            return null;
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            insertSql,
+            new
+            {
+                comment.Id,
+                comment.TaskId,
+                comment.Content,
+                comment.CreatedAt
+            },
+            cancellationToken: cancellationToken));
+
+        return comment.Id;
+    }
+
     private static TaskItem Map(TaskRecord record, List<string> labels)
     {
         if (!Enum.TryParse<DomainTaskStatus>(record.Status, ignoreCase: true, out var status))
@@ -268,5 +321,13 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
     {
         public Guid TaskId { get; init; }
         public string Label { get; init; } = string.Empty;
+    }
+
+    private sealed class TaskCommentRecord
+    {
+        public Guid Id { get; init; }
+        public Guid TaskId { get; init; }
+        public string Content { get; init; } = string.Empty;
+        public DateTime CreatedAt { get; init; }
     }
 }

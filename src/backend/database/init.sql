@@ -88,3 +88,20 @@ BEGIN
     );
 END
 GO
+
+IF OBJECT_ID('dbo.TaskComments', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.TaskComments
+    (
+        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+        TaskId UNIQUEIDENTIFIER NOT NULL,
+        Content NVARCHAR(1000) NOT NULL,
+        CreatedAt DATETIME2 NOT NULL,
+        CONSTRAINT FK_TaskComments_Task FOREIGN KEY (TaskId)
+            REFERENCES dbo.Tasks (Id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IX_TaskComments_TaskId_CreatedAt
+        ON dbo.TaskComments (TaskId, CreatedAt);
+END
+GO

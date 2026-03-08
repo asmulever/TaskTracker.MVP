@@ -74,6 +74,27 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         return await taskRepository.UpdateStatusAsync(id, request.Status, cancellationToken);
     }
 
+    public Task<IReadOnlyCollection<TaskComment>> GetCommentsAsync(Guid taskId, CancellationToken cancellationToken = default)
+        => taskRepository.GetCommentsAsync(taskId, cancellationToken);
+
+    public async Task<Guid?> AddCommentAsync(Guid taskId, CreateTaskCommentRequest request, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Content))
+        {
+            throw new ArgumentException("Comment content is required.", nameof(request.Content));
+        }
+
+        var comment = new TaskComment
+        {
+            Id = Guid.NewGuid(),
+            TaskId = taskId,
+            Content = request.Content.Trim(),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        return await taskRepository.AddCommentAsync(comment, cancellationToken);
+    }
+
     private static bool CanTransition(TaskStatus current, TaskStatus next)
     {
         if (current == next)
