@@ -141,7 +141,7 @@ button:hover:not(:disabled) {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -159,12 +159,30 @@ button:hover:not(:disabled) {
   backdrop-filter: blur(12px);
 }
 
-.metric span {
+.metric-headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metric-headline p {
+  margin: 0;
   color: var(--muted);
   font-weight: 600;
   font-size: 0.85rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+.help-circle-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  font-weight: 800;
 }
 
 .metric strong {
@@ -177,7 +195,7 @@ button:hover:not(:disabled) {
   line-height: 1.4;
 }
 
-.metric-total {
+.metric-highlight {
   background:
     linear-gradient(135deg, rgba(15, 118, 110, 0.14), transparent 58%),
     var(--bg-elev);
@@ -781,6 +799,39 @@ body[data-theme="dark"] .btn.danger {
   margin: 0;
   color: var(--text);
   line-height: 1.55;
+}
+
+.metrics-help-panel {
+  width: min(760px, 96vw);
+}
+
+.metrics-help-list {
+  display: grid;
+  gap: 12px;
+}
+
+.metrics-help-item {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg-soft);
+}
+
+.metrics-help-item h3,
+.metrics-help-item p,
+.metrics-help-item small {
+  margin: 0;
+}
+
+.metrics-help-item p {
+  line-height: 1.55;
+}
+
+.metrics-help-item small {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .skeletons {

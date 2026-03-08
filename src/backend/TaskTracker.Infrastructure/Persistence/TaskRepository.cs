@@ -241,6 +241,29 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         }).ToArray();
     }
 
+    public async Task<IReadOnlyCollection<TaskActivity>> GetRecentActivityFeedAsync(DateTime fromUtc, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT Id, TaskId, Action, Detail, CreatedAt
+            FROM dbo.TaskActivity
+            WHERE CreatedAt >= @FromUtc
+            ORDER BY CreatedAt DESC;
+            """;
+
+        using var connection = connectionFactory.CreateConnection();
+        var rows = await connection.QueryAsync<TaskActivityRecord>(
+            new CommandDefinition(sql, new { FromUtc = fromUtc }, cancellationToken: cancellationToken));
+
+        return rows.Select(static row => new TaskActivity
+        {
+            Id = row.Id,
+            TaskId = row.TaskId,
+            Action = row.Action,
+            Detail = row.Detail,
+            CreatedAt = row.CreatedAt
+        }).ToArray();
+    }
+
     public async Task AddActivityAsync(TaskActivity activity, CancellationToken cancellationToken = default)
     {
         const string sql = """

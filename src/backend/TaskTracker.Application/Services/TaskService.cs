@@ -110,6 +110,9 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
     public Task<IReadOnlyCollection<TaskActivity>> GetActivityAsync(Guid taskId, CancellationToken cancellationToken = default)
         => taskRepository.GetActivityAsync(taskId, cancellationToken);
 
+    public Task<IReadOnlyCollection<TaskActivity>> GetRecentActivityFeedAsync(DateTime fromUtc, CancellationToken cancellationToken = default)
+        => taskRepository.GetRecentActivityFeedAsync(fromUtc, cancellationToken);
+
     public async Task<Guid?> AddCommentAsync(Guid taskId, CreateTaskCommentRequest request, CancellationToken cancellationToken = default)
     {
         var content = request.Content?.Trim() ?? string.Empty;

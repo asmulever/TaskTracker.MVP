@@ -86,6 +86,15 @@ internal sealed class InMemoryTaskRepository : ITaskRepository
         return Task.FromResult((IReadOnlyCollection<TaskActivity>)activity);
     }
 
+    public Task<IReadOnlyCollection<TaskActivity>> GetRecentActivityFeedAsync(DateTime fromUtc, CancellationToken cancellationToken = default)
+    {
+        var activity = _activity
+            .Where(item => item.CreatedAt >= fromUtc)
+            .OrderByDescending(item => item.CreatedAt)
+            .ToList();
+        return Task.FromResult((IReadOnlyCollection<TaskActivity>)activity);
+    }
+
     public Task AddActivityAsync(TaskActivity activity, CancellationToken cancellationToken = default)
     {
         _activity.Add(activity);

@@ -12,5 +12,6 @@ public interface ITaskRepository
     Task<IReadOnlyCollection<TaskComment>> GetCommentsAsync(Guid taskId, CancellationToken cancellationToken = default);
     Task<Guid?> AddCommentAsync(TaskComment comment, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<TaskActivity>> GetActivityAsync(Guid taskId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<TaskActivity>> GetRecentActivityFeedAsync(DateTime fromUtc, CancellationToken cancellationToken = default);
     Task AddActivityAsync(TaskActivity activity, CancellationToken cancellationToken = default);
 }

@@ -36,6 +36,35 @@ const STATUS_ORDER = {
 };
 const THEME_COOKIE = "task_theme";
 const MAX_COMMENT_IMAGE_SIZE = 4 * 1024 * 1024;
+const FOCUS_CAPACITY = 3;
+const DELIVERY_RISK_WINDOW_DAYS = 3;
+const ACTIVITY_FEED_LOOKBACK_DAYS = 7;
+const METRIC_HELP_ITEMS = [
+  {
+    key: "goalCompletion",
+    label: "Cumplimiento del objetivo",
+    description: "Porcentaje de tareas comprometidas para este ciclo que ya fueron cerradas. Mide avance real contra el plan, no solo volumen total.",
+    formula: "Formula sugerida: tareas con targetDueDate dentro del ciclo actual y status = Done / total comprometidas en el ciclo."
+  },
+  {
+    key: "focusActive",
+    label: "Foco activo",
+    description: "Cantidad de tareas actualmente en ejecucion frente a la capacidad recomendada. Ayuda a detectar multitarea excesiva.",
+    formula: "Formula sugerida: Doing actual / capacidad objetivo fija, por ejemplo 3."
+  },
+  {
+    key: "deliveryRisk",
+    label: "Riesgo de entrega",
+    description: "Tareas no cerradas cuyo vencimiento esta proximo o vencido. Senala riesgo operativo antes de que impacte el objetivo.",
+    formula: "Formula sugerida: tareas != Done con targetDueDate <= hoy + 3 dias."
+  },
+  {
+    key: "weeklyClosure",
+    label: "Cierre semanal",
+    description: "Cantidad de tareas cerradas en los ultimos 7 dias. Sirve como lectura de ritmo, no de stock.",
+    formula: "Si no tienes completedAt, se puede derivar desde TaskActivity."
+  }
+];
 
 function getCookieValue(name) {
   const regex = new RegExp(`(?:^|; )${name}=([^;]*)`);
@@ -103,6 +132,20 @@ function getTodayInputDate() {
   const now = new Date();
   const offsetMs = now.getTimezoneOffset() * 60 * 1000;
   return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+function parseDateValue(dateValue) {
+  if (!dateValue) return null;
+  const date = new Date(dateValue);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function endOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
 }
 
 function emptyForm() {
@@ -175,6 +218,7 @@ function App() {
 
   const [theme, setTheme] = useState(getInitialTheme);
   const [tasks, setTasks] = useState([]);
+  const [recentActivityFeed, setRecentActivityFeed] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [filter, setFilter] = useState("all");
@@ -192,6 +236,7 @@ function App() {
   const [contextTab, setContextTab] = useState("comments");
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isMetricsHelpOpen, setIsMetricsHelpOpen] = useState(false);
   const [noticeModal, setNoticeModal] = useState(null);
   const commentFileInputRef = useRef(null);
   const titleInputRef = useRef(null);
@@ -221,21 +266,45 @@ function App() {
     });
   }, [isFormOpen]);
 
-  const stats = useMemo(() => {
-    const total = tasks.length;
-    const created = tasks.filter((t) => t.status === "Created").length;
-    const planned = tasks.filter((t) => t.status === "Planned").length;
-    const inProgress = tasks.filter((t) => t.status === "InProgress").length;
-    const blocked = tasks.filter((t) => t.status === "Blocked").length;
-    const done = tasks.filter((t) => t.status === "Done").length;
-    const progress = total === 0 ? 0 : Math.round((done / total) * 100);
-    return { total, created, planned, inProgress, blocked, done, progress };
-  }, [tasks]);
+  const dashboardMetrics = useMemo(() => {
+    const now = new Date();
+    const cycleStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const riskThreshold = endOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + DELIVERY_RISK_WINDOW_DAYS));
 
-  const progressValue = Math.max(0, Math.min(100, stats.progress));
-  const progressCircleStyle = {
-    backgroundImage: `conic-gradient(var(--primary) ${progressValue}%, rgba(148, 163, 184, 0.18) 0)`
-  };
+    const committedThisCycle = tasks.filter((task) => {
+      const dueDate = parseDateValue(task.targetDueDate || task.dueDate);
+      return dueDate && dueDate >= cycleStart && dueDate < cycleEnd;
+    });
+    const completedThisCycle = committedThisCycle.filter((task) => task.status === "Done").length;
+    const goalCompletionPercent = committedThisCycle.length === 0
+      ? 0
+      : Math.round((completedThisCycle / committedThisCycle.length) * 100);
+
+    const focusActiveCount = tasks.filter((task) => task.status === "Doing").length;
+
+    const atRiskCount = tasks.filter((task) => {
+      if (task.status === "Done") return false;
+      const dueDate = parseDateValue(task.targetDueDate || task.dueDate);
+      return dueDate && startOfDay(dueDate) <= riskThreshold;
+    }).length;
+
+    const weeklyClosedCount = new Set(
+      recentActivityFeed
+        .filter((item) => item.action === "StatusChanged" && /to Done\b/i.test(item.detail || ""))
+        .map((item) => item.taskId)
+    ).size;
+
+    return {
+      goalCompletionPercent,
+      completedThisCycle,
+      committedThisCycleCount: committedThisCycle.length,
+      focusActiveCount,
+      focusCapacity: FOCUS_CAPACITY,
+      atRiskCount,
+      weeklyClosedCount
+    };
+  }, [tasks, recentActivityFeed]);
 
   function askConfirmation(title, message) {
     return new Promise((resolve) => {
@@ -336,7 +405,11 @@ function App() {
   async function loadTasks() {
     setIsLoading(true);
     try {
-      const data = await request("/tasks", { method: "GET", headers: {} });
+      const fromUtc = encodeURIComponent(new Date(Date.now() - ACTIVITY_FEED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString());
+      const [data, activityFeed] = await Promise.all([
+        request("/tasks", { method: "GET", headers: {} }),
+        request(`/tasks/activity-feed?fromUtc=${fromUtc}`, { method: "GET", headers: {} }).catch(() => [])
+      ]);
       const normalized = Array.isArray(data)
         ? data.map((task) => ({
             ...task,
@@ -347,6 +420,7 @@ function App() {
           }))
         : [];
       setTasks(normalized);
+      setRecentActivityFeed(Array.isArray(activityFeed) ? activityFeed : []);
     } catch (error) {
       toast(error.message, false);
     } finally {
@@ -745,39 +819,47 @@ function App() {
               <span className="theme-icon" aria-hidden="true">{theme === "light" ? "🌙" : "☀"}</span>
               <span>{theme === "light" ? "Modo oscuro" : "Modo claro"}</span>
             </button>
+            <button
+              className="btn ghost help-circle-btn"
+              type="button"
+              onClick={() => setIsMetricsHelpOpen(true)}
+              aria-label="Ver ayuda de indicadores"
+              title="Ver ayuda de indicadores"
+            >
+              <span aria-hidden="true">ⓘ</span>
+            </button>
           </div>
         </div>
       </header>
 
       <section className="metrics">
-        <article className="metric metric-total">
-          <span>Total</span>
-          <strong>{stats.total}</strong>
-          <small>Volumen visible en tablero</small>
-        </article>
-        <article className="metric">
-          <span>Todo</span>
-          <strong>{stats.todo}</strong>
-          <small>Pendientes de iniciar</small>
-        </article>
-        <article className="metric">
-          <span>Doing</span>
-          <strong>{stats.doing}</strong>
-          <small>Trabajo en movimiento</small>
-        </article>
-        <article className="metric">
-          <span>Done</span>
-          <strong>{stats.done}</strong>
-          <small>Tareas cerradas</small>
-        </article>
-        <article className="metric metric-progress">
-          <span>Progreso</span>
-          <div className="progress-circle" style={progressCircleStyle}>
-            <div className="progress-circle-inner">
-              <strong>{progressValue}%</strong>
-            </div>
+        <article className="metric metric-highlight">
+          <div className="metric-headline">
+            <p>{METRIC_HELP_ITEMS[0].label}</p>
           </div>
-          <small>Relacion entre cierre y total</small>
+          <strong>{dashboardMetrics.goalCompletionPercent}%</strong>
+          <small>{dashboardMetrics.completedThisCycle} de {dashboardMetrics.committedThisCycleCount} comprometidas este mes</small>
+        </article>
+        <article className="metric">
+          <div className="metric-headline">
+            <p>{METRIC_HELP_ITEMS[1].label}</p>
+          </div>
+          <strong>{dashboardMetrics.focusActiveCount}/{dashboardMetrics.focusCapacity}</strong>
+          <small>Capacidad recomendada para sostener foco sin sobrecarga</small>
+        </article>
+        <article className="metric">
+          <div className="metric-headline">
+            <p>{METRIC_HELP_ITEMS[2].label}</p>
+          </div>
+          <strong>{dashboardMetrics.atRiskCount}</strong>
+          <small>Tareas no cerradas con vencimiento proximo o ya vencido</small>
+        </article>
+        <article className="metric">
+          <div className="metric-headline">
+            <p>{METRIC_HELP_ITEMS[3].label}</p>
+          </div>
+          <strong>{dashboardMetrics.weeklyClosedCount}</strong>
+          <small>Tareas cerradas en los ultimos 7 dias</small>
         </article>
       </section>
 
@@ -1083,6 +1165,37 @@ function App() {
                 </>
               )}
             </section>
+          </aside>
+        </div>
+      )}
+
+      {isMetricsHelpOpen && (
+        <div className="notice-overlay" onClick={() => setIsMetricsHelpOpen(false)}>
+          <aside className="panel notice-panel metrics-help-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <p className="label">Referencia</p>
+                <h2>Guia de indicadores</h2>
+              </div>
+              <button
+                className="btn ghost icon-btn"
+                type="button"
+                onClick={() => setIsMetricsHelpOpen(false)}
+                aria-label="Cerrar ayuda de indicadores"
+                title="Cerrar ayuda de indicadores"
+              >
+                <span aria-hidden="true">✕</span>
+              </button>
+            </div>
+            <div className="metrics-help-list">
+              {METRIC_HELP_ITEMS.map((item) => (
+                <section key={item.key} className="metrics-help-item">
+                  <h3>{item.label}</h3>
+                  <p>{item.description}</p>
+                  <small>{item.formula}</small>
+                </section>
+              ))}
+            </div>
           </aside>
         </div>
       )}

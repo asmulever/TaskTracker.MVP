@@ -116,4 +116,14 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         return Ok(activity);
     }
 
+    [HttpGet("activity-feed")]
+    public async Task<IActionResult> GetActivityFeed([FromQuery] DateTime? fromUtc, CancellationToken cancellationToken)
+    {
+        var activity = await taskService.GetRecentActivityFeedAsync(
+            (fromUtc ?? DateTime.UtcNow.AddDays(-7)).ToUniversalTime(),
+            cancellationToken);
+
+        return Ok(activity);
+    }
+
 }
