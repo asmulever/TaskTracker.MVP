@@ -6,6 +6,10 @@ namespace TaskTracker.Application.Tests;
 
 public sealed class TaskServiceDeleteAndQueryTests
 {
+    /// <summary>
+    /// Verifica que una tarea eliminada deje de estar disponible para consulta.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación de eliminación finaliza.</returns>
     [Fact]
     public async Task DeleteAsync_ShouldRemoveTask()
     {
@@ -24,6 +28,10 @@ public sealed class TaskServiceDeleteAndQueryTests
         Assert.Null(loaded);
     }
 
+    /// <summary>
+    /// Verifica que la consulta general devuelva las tareas creadas.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación de consulta finaliza.</returns>
     [Fact]
     public async Task GetAllAsync_ShouldReturnCreatedTasks()
     {

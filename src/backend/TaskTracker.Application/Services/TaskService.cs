@@ -12,12 +12,29 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
     private const int MaxCommentImageDataLength = 6_000_000;
     private const int MaxCommentImageFileNameLength = 260;
 
+    /// <summary>
+    /// Recupera todas las tareas disponibles desde el repositorio.
+    /// </summary>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La colección de tareas obtenida desde persistencia.</returns>
     public Task<IReadOnlyCollection<TaskItem>> GetAllAsync(CancellationToken cancellationToken = default)
         => taskRepository.GetAllAsync(cancellationToken);
 
+    /// <summary>
+    /// Busca una tarea por su identificador.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea requerida.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La tarea encontrada o <see langword="null"/> cuando no existe.</returns>
     public Task<TaskItem?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => taskRepository.GetByIdAsync(id, cancellationToken);
 
+    /// <summary>
+    /// Crea una nueva tarea validando y normalizando sus datos de entrada.
+    /// </summary>
+    /// <param name="request">Datos utilizados para crear la tarea.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>El identificador asignado a la nueva tarea.</returns>
     public async Task<Guid> CreateAsync(CreateTaskRequest request, CancellationToken cancellationToken = default)
     {
         ValidateTitle(request.Title);
@@ -41,6 +58,13 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         return id;
     }
 
+    /// <summary>
+    /// Actualiza una tarea existente con los valores editables informados por el cliente.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea a actualizar.</param>
+    /// <param name="request">Datos nuevos para la tarea.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns><see langword="true"/> si la tarea fue actualizada; en caso contrario, <see langword="false"/>.</returns>
     public async Task<bool> UpdateAsync(Guid id, UpdateTaskRequest request, CancellationToken cancellationToken = default)
     {
         ValidateTitle(request.Title);
@@ -68,6 +92,12 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         return updated;
     }
 
+    /// <summary>
+    /// Elimina una tarea y registra la actividad correspondiente cuando la operación tiene éxito.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea a eliminar.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns><see langword="true"/> si la tarea fue eliminada; en caso contrario, <see langword="false"/>.</returns>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var deleted = await taskRepository.DeleteAsync(id, cancellationToken);
@@ -79,6 +109,13 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         return deleted;
     }
 
+    /// <summary>
+    /// Actualiza el estado de una tarea existente y registra el cambio en la actividad.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea cuyo estado se modificará.</param>
+    /// <param name="request">Request con el nuevo estado solicitado.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns><see langword="true"/> si el estado cambió; en caso contrario, <see langword="false"/>.</returns>
     public async Task<bool> UpdateStatusAsync(Guid id, UpdateTaskStatusRequest request, CancellationToken cancellationToken = default)
     {
         var existing = await taskRepository.GetByIdAsync(id, cancellationToken);
@@ -105,15 +142,40 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         return changed;
     }
 
+    /// <summary>
+    /// Recupera los comentarios asociados a una tarea.
+    /// </summary>
+    /// <param name="taskId">Identificador de la tarea consultada.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La colección de comentarios de la tarea indicada.</returns>
     public Task<IReadOnlyCollection<TaskComment>> GetCommentsAsync(Guid taskId, CancellationToken cancellationToken = default)
         => taskRepository.GetCommentsAsync(taskId, cancellationToken);
 
+    /// <summary>
+    /// Recupera la actividad asociada a una tarea.
+    /// </summary>
+    /// <param name="taskId">Identificador de la tarea consultada.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La colección de eventos de actividad asociados a la tarea.</returns>
     public Task<IReadOnlyCollection<TaskActivity>> GetActivityAsync(Guid taskId, CancellationToken cancellationToken = default)
         => taskRepository.GetActivityAsync(taskId, cancellationToken);
 
+    /// <summary>
+    /// Recupera el feed de actividad reciente a partir de una fecha.
+    /// </summary>
+    /// <param name="fromUtc">Fecha mínima en UTC desde la cual devolver actividad.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La colección de actividad ocurrida desde la fecha indicada.</returns>
     public Task<IReadOnlyCollection<TaskActivity>> GetRecentActivityFeedAsync(DateTime fromUtc, CancellationToken cancellationToken = default)
         => taskRepository.GetRecentActivityFeedAsync(fromUtc, cancellationToken);
 
+    /// <summary>
+    /// Agrega un comentario a una tarea validando contenido, adjunto y límites permitidos.
+    /// </summary>
+    /// <param name="taskId">Identificador de la tarea que recibirá el comentario.</param>
+    /// <param name="request">Contenido textual y datos del adjunto opcional.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>El identificador del comentario creado o <see langword="null"/> si la tarea no existe.</returns>
     public async Task<Guid?> AddCommentAsync(Guid taskId, CreateTaskCommentRequest request, CancellationToken cancellationToken = default)
     {
         var content = request.Content?.Trim() ?? string.Empty;
@@ -172,6 +234,14 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         return commentId;
     }
 
+    /// <summary>
+    /// Registra un evento de actividad asociado a una tarea.
+    /// </summary>
+    /// <param name="taskId">Identificador de la tarea sobre la que se registra actividad.</param>
+    /// <param name="action">Código o nombre de la acción realizada.</param>
+    /// <param name="detail">Detalle descriptivo de la actividad.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una tarea completada cuando la actividad fue persistida.</returns>
     private Task RegisterActivityAsync(Guid taskId, string action, string detail, CancellationToken cancellationToken)
     {
         return taskRepository.AddActivityAsync(new TaskActivity
@@ -184,6 +254,12 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         }, cancellationToken);
     }
 
+    /// <summary>
+    /// Evalúa si una transición de estado está permitida por la regla actual del servicio.
+    /// </summary>
+    /// <param name="current">Estado actual de la tarea.</param>
+    /// <param name="next">Estado de destino solicitado.</param>
+    /// <returns><see langword="true"/> cuando la transición está permitida.</returns>
     private static bool CanTransition(TaskStatus current, TaskStatus next)
     {
         _ = current;
@@ -192,6 +268,11 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         return true;
     }
 
+    /// <summary>
+    /// Calcula el tamaño binario aproximado de una imagen codificada como data URL base64.
+    /// </summary>
+    /// <param name="imageDataUrl">Data URL de la imagen a medir.</param>
+    /// <returns>La cantidad aproximada de bytes representados en la cadena.</returns>
     private static int GetImageByteSize(string imageDataUrl)
     {
         var separatorIndex = imageDataUrl.IndexOf(',');
@@ -214,6 +295,11 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
         return Math.Max(0, (base64.Length * 3 / 4) - padding);
     }
 
+    /// <summary>
+    /// Normaliza la lista de etiquetas removiendo vacíos, duplicados y valores fuera de rango.
+    /// </summary>
+    /// <param name="labels">Colección original de etiquetas.</param>
+    /// <returns>Una lista normalizada lista para persistir.</returns>
     private static List<string> NormalizeLabels(IReadOnlyCollection<string>? labels)
     {
         if (labels is null || labels.Count == 0)
@@ -230,6 +316,10 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
             .ToList();
     }
 
+    /// <summary>
+    /// Valida que el título requerido exista y respete el largo máximo permitido.
+    /// </summary>
+    /// <param name="title">Título recibido para validar.</param>
     private static void ValidateTitle(string? title)
     {
         if (string.IsNullOrWhiteSpace(title))

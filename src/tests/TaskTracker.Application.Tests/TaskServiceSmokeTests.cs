@@ -5,6 +5,10 @@ namespace TaskTracker.Application.Tests;
 
 public sealed class TaskServiceSmokeTests
 {
+    /// <summary>
+    /// Verifica que el servicio devuelva una colección vacía cuando no existen tareas.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación smoke finaliza.</returns>
     [Fact]
     public async Task GetAllAsync_ShouldReturnEmptyCollection_WhenNoData()
     {

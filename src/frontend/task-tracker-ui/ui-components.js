@@ -11,6 +11,11 @@ window.TaskTrackerUi = window.TaskTrackerUi || {};
     formatDateTime
   } = window.TaskTrackerUi;
 
+  /**
+   * Renderiza las tarjetas resumen del dashboard.
+   * @param {{dashboardMetrics: object}} props Props del componente.
+   * @returns {JSX.Element} La sección de métricas principal.
+   */
   function MetricsSection({ dashboardMetrics }) {
     return (
       <section className="metrics">
@@ -46,6 +51,11 @@ window.TaskTrackerUi = window.TaskTrackerUi || {};
     );
   }
 
+  /**
+   * Renderiza el modal con la referencia conceptual de los indicadores.
+   * @param {{isOpen: boolean, onClose: Function}} props Props del componente.
+   * @returns {JSX.Element|null} El modal visible o null cuando está cerrado.
+   */
   function MetricsHelpModal({ isOpen, onClose }) {
     if (!isOpen) return null;
 
@@ -81,6 +91,11 @@ window.TaskTrackerUi = window.TaskTrackerUi || {};
     );
   }
 
+  /**
+   * Renderiza el modal de contexto con comentarios y actividad de la tarea seleccionada.
+   * @param {object} props Props necesarias para operar el modal de contexto.
+   * @returns {JSX.Element|null} El modal visible o null cuando está cerrado.
+   */
   function ContextModal({
     isOpen,
     onClose,
@@ -275,6 +290,11 @@ window.TaskTrackerUi = window.TaskTrackerUi || {};
     );
   }
 
+  /**
+   * Renderiza el formulario modal para crear o editar tareas.
+   * @param {object} props Props necesarias para controlar el formulario.
+   * @returns {JSX.Element|null} El formulario visible o null cuando está cerrado.
+   */
   function TaskFormModal({
     isOpen,
     onClose,
@@ -387,6 +407,11 @@ window.TaskTrackerUi = window.TaskTrackerUi || {};
     );
   }
 
+  /**
+   * Renderiza el modal genérico de confirmación o aviso.
+   * @param {{noticeModal: object|null, onClose: Function, onDecision: Function}} props Props del modal.
+   * @returns {JSX.Element|null} El modal visible o null cuando no hay aviso activo.
+   */
   function NoticeModal({ noticeModal, onClose, onDecision }) {
     if (!noticeModal) return null;
 

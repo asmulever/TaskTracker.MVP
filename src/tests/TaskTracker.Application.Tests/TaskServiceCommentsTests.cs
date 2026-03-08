@@ -6,6 +6,10 @@ namespace TaskTracker.Application.Tests;
 
 public sealed class TaskServiceCommentsTests
 {
+    /// <summary>
+    /// Verifica que un comentario textual se persista correctamente.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del comentario finaliza.</returns>
     [Fact]
     public async Task AddCommentAsync_ShouldPersistComment()
     {
@@ -25,6 +29,10 @@ public sealed class TaskServiceCommentsTests
         Assert.Equal("Primer comentario", comments.First().Content);
     }
 
+    /// <summary>
+    /// Verifica que un comentario con imagen adjunta se persista correctamente.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del adjunto finaliza.</returns>
     [Fact]
     public async Task AddCommentAsync_ShouldPersistImageAttachment()
     {
@@ -47,6 +55,10 @@ public sealed class TaskServiceCommentsTests
         Assert.Equal("captura.png", comments.First().ImageFileName);
     }
 
+    /// <summary>
+    /// Verifica que agregar un comentario sobre una tarea inexistente no genere un identificador.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del caso inexistente finaliza.</returns>
     [Fact]
     public async Task AddCommentAsync_ShouldReturnNull_WhenTaskDoesNotExist()
     {
@@ -60,6 +72,10 @@ public sealed class TaskServiceCommentsTests
         Assert.Null(commentId);
     }
 
+    /// <summary>
+    /// Verifica que no se permitan comentarios vacíos cuando tampoco se adjunta una imagen.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del error esperado finaliza.</returns>
     [Fact]
     public async Task AddCommentAsync_ShouldRejectEmptyCommentWithoutImage()
     {
@@ -70,6 +86,10 @@ public sealed class TaskServiceCommentsTests
         await Assert.ThrowsAsync<ArgumentException>(() => service.AddCommentAsync(taskId, new CreateTaskCommentRequest()));
     }
 
+    /// <summary>
+    /// Verifica que se rechacen imágenes que superan el límite máximo permitido.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del límite de tamaño finaliza.</returns>
     [Fact]
     public async Task AddCommentAsync_ShouldRejectImageLargerThan2Mb()
     {

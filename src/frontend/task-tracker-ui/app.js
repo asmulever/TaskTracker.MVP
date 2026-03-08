@@ -34,6 +34,10 @@ const {
   NoticeModal
 } = window.TaskTrackerUi;
 
+/**
+ * Orquesta el estado principal del tablero y coordina la interacción con la API.
+ * @returns {JSX.Element} La aplicación completa del task tracker.
+ */
 function App() {
   const apiBase = (window.TASK_API_URL || window.location.origin).replace(/\/$/, "");
   const request = useMemo(() => createApiClient(apiBase), [apiBase]);
@@ -67,6 +71,10 @@ function App() {
 
   const isEditing = form.id !== null;
 
+  /**
+   * Limpia el input de archivo del comentario para permitir seleccionar el mismo archivo nuevamente.
+   * @returns {void}
+   */
   function resetCommentFileInput() {
     if (commentFileInputRef.current) {
       commentFileInputRef.current.value = "";
@@ -135,6 +143,12 @@ function App() {
     [tasks, selectedTaskId]
   );
 
+  /**
+   * Abre un modal de confirmación y resuelve la decisión del usuario mediante una promesa.
+   * @param {string} title Título del aviso.
+   * @param {string} message Mensaje a mostrar.
+   * @returns {Promise<boolean>} True cuando el usuario acepta la acción.
+   */
   function askConfirmation(title, message) {
     return new Promise((resolve) => {
       setNoticeModal({
@@ -145,6 +159,10 @@ function App() {
     });
   }
 
+  /**
+   * Cierra el modal de aviso rechazando implícitamente la acción pendiente.
+   * @returns {void}
+   */
   function closeNoticeModal() {
     if (!noticeModal) return;
     if (typeof noticeModal.resolve === "function") {
@@ -153,6 +171,11 @@ function App() {
     setNoticeModal(null);
   }
 
+  /**
+   * Resuelve el modal de confirmación con la decisión elegida por el usuario.
+   * @param {boolean} accepted Indica si la acción fue aceptada.
+   * @returns {void}
+   */
   function onNoticeDecision(accepted) {
     if (typeof noticeModal?.resolve === "function") {
       noticeModal.resolve(accepted);
@@ -160,6 +183,10 @@ function App() {
     setNoticeModal(null);
   }
 
+  /**
+   * Carga las tareas y el feed reciente desde la API y normaliza sus datos para la UI.
+   * @returns {Promise<void>}
+   */
   async function loadTasks() {
     setIsLoading(true);
     try {
@@ -188,6 +215,11 @@ function App() {
     }
   }
 
+  /**
+   * Carga comentarios y actividad de la tarea seleccionada.
+   * @param {string} taskId Identificador de la tarea cuyo contexto se consultará.
+   * @returns {Promise<void>}
+   */
   async function loadTaskContext(taskId) {
     if (!isValidTaskId(taskId)) {
       setComments([]);
@@ -214,24 +246,47 @@ function App() {
     }
   }
 
+  /**
+   * Actualiza un campo puntual del formulario de tareas.
+   * @param {string} field Nombre del campo a modificar.
+   * @param {string} value Valor nuevo para el campo.
+   * @returns {void}
+   */
   function onFormField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  /**
+   * Restaura el formulario al estado inicial.
+   * @returns {void}
+   */
   function resetForm() {
     setForm(emptyForm());
   }
 
+  /**
+   * Prepara el modal para crear una nueva tarea.
+   * @returns {void}
+   */
   function openCreateForm() {
     resetForm();
     setIsFormOpen(true);
   }
 
+  /**
+   * Cierra el modal del formulario y limpia su estado.
+   * @returns {void}
+   */
   function closeFormModal() {
     setIsFormOpen(false);
     resetForm();
   }
 
+  /**
+   * Abre el modal de contexto para una tarea específica.
+   * @param {string} taskId Identificador de la tarea seleccionada.
+   * @returns {void}
+   */
   function openContextModal(taskId) {
     setCommentText("");
     setCommentImage(null);
@@ -241,6 +296,10 @@ function App() {
     setIsContextOpen(true);
   }
 
+  /**
+   * Cierra el modal de contexto y reinicia su estado asociado.
+   * @returns {void}
+   */
   function closeContextModal() {
     setCommentText("");
     setCommentImage(null);
@@ -253,6 +312,11 @@ function App() {
     resetCommentFileInput();
   }
 
+  /**
+   * Carga una tarea en el formulario para editarla.
+   * @param {object} task Tarea seleccionada para edición.
+   * @returns {void}
+   */
   function startEdit(task) {
     setSelectedTaskId(normalizeId(task.id));
     setContextTab("comments");
@@ -271,6 +335,11 @@ function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  /**
+   * Persiste una tarea nueva o actualiza una existente según el estado actual del formulario.
+   * @param {SubmitEvent} event Evento submit del formulario.
+   * @returns {Promise<void>}
+   */
   async function saveTask(event) {
     event.preventDefault();
 
@@ -334,6 +403,11 @@ function App() {
     }
   }
 
+  /**
+   * Elimina una tarea luego de confirmar la acción con el usuario.
+   * @param {string} id Identificador de la tarea a eliminar.
+   * @returns {Promise<void>}
+   */
   async function deleteTask(id) {
     const confirmed = await askConfirmation("Eliminar tarea", "¿Eliminar esta tarea?");
     if (!confirmed) return;
@@ -352,6 +426,12 @@ function App() {
     }
   }
 
+  /**
+   * Actualiza el estado de una tarea desde las acciones directas de la tarjeta.
+   * @param {string} id Identificador de la tarea a actualizar.
+   * @param {string} status Estado de destino.
+   * @returns {Promise<void>}
+   */
   async function updateTaskStatus(id, status) {
     const task = tasks.find((item) => item.id === id);
     if (!task) return;
@@ -379,6 +459,12 @@ function App() {
     }
   }
 
+  /**
+   * Mueve una tarea entre columnas aplicando actualización optimista en la UI.
+   * @param {string} taskId Identificador de la tarea arrastrada.
+   * @param {string} targetStatus Estado destino de la columna.
+   * @returns {Promise<void>}
+   */
   async function moveTaskToStatus(taskId, targetStatus) {
     const task = tasks.find((item) => item.id === taskId);
     if (!task || task.status === targetStatus) return;
@@ -415,23 +501,45 @@ function App() {
     }
   }
 
+  /**
+   * Inicia el arrastre de una tarea en el tablero.
+   * @param {DragEvent} event Evento de drag start.
+   * @param {string} taskId Identificador de la tarea arrastrada.
+   * @returns {void}
+   */
   function onTaskDragStart(event, taskId) {
     event.dataTransfer.setData("text/plain", String(taskId));
     event.dataTransfer.effectAllowed = "move";
     setDragTaskId(taskId);
   }
 
+  /**
+   * Limpia el estado visual del drag and drop al finalizar el arrastre.
+   * @returns {void}
+   */
   function onTaskDragEnd() {
     setDragTaskId(null);
     setDragOverStatus(null);
   }
 
+  /**
+   * Mantiene habilitado el drop sobre una columna y marca su estado visual.
+   * @param {DragEvent} event Evento drag over.
+   * @param {string} status Estado representado por la columna.
+   * @returns {void}
+   */
   function onColumnDragOver(event, status) {
     event.preventDefault();
     if (dragOverStatus !== status) setDragOverStatus(status);
     event.dataTransfer.dropEffect = "move";
   }
 
+  /**
+   * Completa el drop de una tarea sobre una columna del tablero.
+   * @param {DragEvent} event Evento drop.
+   * @param {string} status Estado destino de la columna.
+   * @returns {Promise<void>}
+   */
   async function onColumnDrop(event, status) {
     event.preventDefault();
     if (!dragTaskId) return;
@@ -440,6 +548,10 @@ function App() {
     setDragOverStatus(null);
   }
 
+  /**
+   * Publica un comentario para la tarea seleccionada, con imagen opcional.
+   * @returns {Promise<void>}
+   */
   async function addComment() {
     if (!selectedTaskId || !isValidTaskId(selectedTaskId)) {
       toast("Selecciona una tarea válida", false);
@@ -486,6 +598,11 @@ function App() {
     }
   }
 
+  /**
+   * Valida y prepara una imagen para adjuntarla al comentario actual.
+   * @param {File} file Archivo de imagen seleccionado o pegado.
+   * @returns {Promise<boolean>} True cuando la imagen queda lista para enviarse.
+   */
   async function attachCommentImage(file) {
     if (!file) return false;
 
@@ -518,12 +635,22 @@ function App() {
     }
   }
 
+  /**
+   * Maneja la selección de una imagen desde el input file.
+   * @param {Event} event Evento change del input de archivo.
+   * @returns {Promise<void>}
+   */
   async function onCommentImageSelected(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     await attachCommentImage(file);
   }
 
+  /**
+   * Captura imágenes pegadas desde el portapapeles y las adjunta al comentario.
+   * @param {ClipboardEvent} event Evento paste del textarea.
+   * @returns {Promise<void>}
+   */
   async function onCommentPaste(event) {
     const items = Array.from(event.clipboardData?.items || []);
     const imageItem = items.find((item) => (item.type || "").toLowerCase().startsWith("image/"));
@@ -539,11 +666,20 @@ function App() {
     await attachCommentImage(file);
   }
 
+  /**
+   * Quita la imagen adjunta del comentario actual.
+   * @returns {void}
+   */
   function clearCommentImage() {
     setCommentImage(null);
     resetCommentFileInput();
   }
 
+  /**
+   * Permite avanzar del título a la descripción usando Enter en el formulario.
+   * @param {KeyboardEvent} event Evento de teclado del input título.
+   * @returns {void}
+   */
   function onTitleKeyDown(event) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent?.isComposing) {
       return;
@@ -553,6 +689,11 @@ function App() {
     descriptionInputRef.current?.focus();
   }
 
+  /**
+   * Alterna la visibilidad de la imagen adjunta de un comentario existente.
+   * @param {string} commentId Identificador del comentario a expandir o contraer.
+   * @returns {void}
+   */
   function toggleCommentImage(commentId) {
     setExpandedCommentImages((current) => ({
       ...current,

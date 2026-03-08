@@ -6,6 +6,10 @@ namespace TaskTracker.Application.Tests;
 
 public sealed class TaskServiceActivityTests
 {
+    /// <summary>
+    /// Verifica que la actividad registre la creación de la tarea y el posterior cambio de estado.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del caso de prueba finaliza.</returns>
     [Fact]
     public async Task Activity_ShouldTrackCreateAndStatusChange()
     {

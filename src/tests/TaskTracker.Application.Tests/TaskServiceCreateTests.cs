@@ -6,6 +6,10 @@ namespace TaskTracker.Application.Tests;
 
 public sealed class TaskServiceCreateTests
 {
+    /// <summary>
+    /// Verifica que la creación de tareas recorte espacios y persista los datos normalizados.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación de persistencia finaliza.</returns>
     [Fact]
     public async Task CreateAsync_ShouldTrimText_AndPersistTask()
     {
@@ -27,6 +31,10 @@ public sealed class TaskServiceCreateTests
         Assert.Equal(TaskTracker.Domain.Enums.TaskStatus.Created, created.Status);
     }
 
+    /// <summary>
+    /// Verifica que las etiquetas se normalicen eliminando duplicados y vacíos.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación de etiquetas finaliza.</returns>
     [Fact]
     public async Task CreateAsync_ShouldNormalizeLabels()
     {
@@ -47,6 +55,10 @@ public sealed class TaskServiceCreateTests
         Assert.True(created.Labels.Any(label => string.Equals(label, "kanban", StringComparison.OrdinalIgnoreCase)));
     }
 
+    /// <summary>
+    /// Verifica que la creación falle cuando el título está vacío.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del error esperado finaliza.</returns>
     [Fact]
     public async Task CreateAsync_ShouldFail_WhenTitleIsEmpty()
     {

@@ -33,6 +33,13 @@ window.TaskTrackerUi = window.TaskTrackerUi || {};
     }
   ];
 
+  /**
+   * Calcula las métricas del dashboard a partir de tareas y actividad reciente.
+   * @param {Array<object>} tasks Tareas disponibles en el tablero.
+   * @param {Array<object>} recentActivityFeed Actividad reciente consultada desde la API.
+   * @param {Date} [now=new Date()] Fecha base para los cálculos temporales.
+   * @returns {object} Objeto con las métricas principales para renderizar.
+   */
   function buildDashboardMetrics(tasks, recentActivityFeed, now = new Date()) {
     const cycleStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -73,6 +80,10 @@ window.TaskTrackerUi = window.TaskTrackerUi || {};
     };
   }
 
+  /**
+   * Obtiene la fecha mínima en UTC usada para consultar el feed de actividad reciente.
+   * @returns {string} Fecha en formato ISO para enviar como query string.
+   */
   function getActivityFeedFromUtc() {
     return new Date(Date.now() - ACTIVITY_FEED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
   }

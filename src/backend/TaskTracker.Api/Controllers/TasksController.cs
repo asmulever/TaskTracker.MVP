@@ -9,6 +9,11 @@ namespace TaskTracker.Api.Controllers;
 [Route("tasks")]
 public sealed class TasksController(ITaskService taskService) : ControllerBase
 {
+    /// <summary>
+    /// Devuelve el listado completo de tareas.
+    /// </summary>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 200 con la colección de tareas.</returns>
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
     {
@@ -16,6 +21,12 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         return Ok(tasks);
     }
 
+    /// <summary>
+    /// Recupera una tarea específica por identificador.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea solicitada.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 200 con la tarea o 404 si no existe.</returns>
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -28,6 +39,12 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         return Ok(task);
     }
 
+    /// <summary>
+    /// Crea una nueva tarea en el sistema.
+    /// </summary>
+    /// <param name="request">Datos utilizados para crear la tarea.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 201 con el identificador creado o un error de validación.</returns>
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTaskRequest request, CancellationToken cancellationToken)
     {
@@ -42,6 +59,13 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Actualiza los datos editables de una tarea existente.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea a modificar.</param>
+    /// <param name="request">Nuevos datos de la tarea.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 204 si la tarea se actualiza, 404 si no existe o un error de validación.</returns>
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTaskRequest request, CancellationToken cancellationToken)
     {
@@ -56,6 +80,12 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Elimina una tarea por identificador.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea a eliminar.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 204 si se elimina o 404 si no existe.</returns>
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
@@ -63,6 +93,13 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         return deleted ? NoContent() : NotFound();
     }
 
+    /// <summary>
+    /// Actualiza el estado de una tarea.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea cuyo estado se cambiará.</param>
+    /// <param name="request">Nuevo estado solicitado.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 204 si el estado se actualiza, 404 si no existe o un error de validación.</returns>
     [HttpPatch("{id}/status")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateTaskStatusRequest request, CancellationToken cancellationToken)
     {
@@ -77,6 +114,12 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Recupera los comentarios asociados a una tarea.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea consultada.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 200 con los comentarios o 404 si la tarea no existe.</returns>
     [HttpGet("{id}/comments")]
     public async Task<IActionResult> GetComments(Guid id, CancellationToken cancellationToken)
     {
@@ -90,6 +133,13 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         return Ok(comments);
     }
 
+    /// <summary>
+    /// Agrega un comentario a una tarea usando un cuerpo JSON.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea que recibirá el comentario.</param>
+    /// <param name="request">Contenido del comentario y datos opcionales de imagen.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 200 con el identificador del comentario o el error correspondiente.</returns>
     [HttpPost("{id}/comments")]
     [Consumes("application/json")]
     public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateTaskCommentRequest request, CancellationToken cancellationToken)
@@ -105,6 +155,13 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Agrega un comentario a una tarea usando multipart/form-data.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea que recibirá el comentario.</param>
+    /// <param name="form">Contenido del comentario y archivo de imagen opcional.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 200 con el identificador del comentario o el error correspondiente.</returns>
     [HttpPost("{id}/comments")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> AddCommentForm(Guid id, [FromForm] CreateTaskCommentFormRequest form, CancellationToken cancellationToken)
@@ -121,6 +178,12 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Recupera la actividad histórica de una tarea.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea consultada.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 200 con la actividad o 404 si la tarea no existe.</returns>
     [HttpGet("{id}/activity")]
     public async Task<IActionResult> GetActivity(Guid id, CancellationToken cancellationToken)
     {
@@ -134,6 +197,12 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         return Ok(activity);
     }
 
+    /// <summary>
+    /// Recupera la actividad reciente del tablero desde una fecha determinada.
+    /// </summary>
+    /// <param name="fromUtc">Fecha mínima en UTC desde la cual consultar actividad.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una respuesta HTTP 200 con la actividad reciente.</returns>
     [HttpGet("activity-feed")]
     public async Task<IActionResult> GetActivityFeed([FromQuery] DateTime? fromUtc, CancellationToken cancellationToken)
     {
@@ -144,6 +213,12 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         return Ok(activity);
     }
 
+    /// <summary>
+    /// Convierte un formulario multipart en un request de comentario compatible con la capa de aplicación.
+    /// </summary>
+    /// <param name="form">Formulario recibido desde el cliente.</param>
+    /// <param name="cancellationToken">Token para cancelar la lectura asincrónica del archivo.</param>
+    /// <returns>Un request de comentario con la imagen transformada a data URL cuando corresponde.</returns>
     private static async Task<CreateTaskCommentRequest> MapCommentFormRequestAsync(
         CreateTaskCommentFormRequest form,
         CancellationToken cancellationToken)

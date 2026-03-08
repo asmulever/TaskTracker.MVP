@@ -8,6 +8,11 @@ namespace TaskTracker.Infrastructure.Persistence;
 
 public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : ITaskRepository
 {
+    /// <summary>
+    /// Recupera todas las tareas persistidas junto con sus etiquetas asociadas.
+    /// </summary>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La colección completa de tareas almacenadas.</returns>
     public async Task<IReadOnlyCollection<TaskItem>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -30,6 +35,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return rows.Select(row => Map(row, labelsByTaskId.GetValueOrDefault(row.Id, []))).ToArray();
     }
 
+    /// <summary>
+    /// Recupera una tarea por identificador junto con sus etiquetas.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea a buscar.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La tarea encontrada o <see langword="null"/> cuando no existe.</returns>
     public async Task<TaskItem?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -59,6 +70,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return Map(row, labelsByTaskId.GetValueOrDefault(row.Id, []));
     }
 
+    /// <summary>
+    /// Inserta una nueva tarea en la base de datos y persiste sus etiquetas en la misma transacción.
+    /// </summary>
+    /// <param name="task">Entidad de tarea a crear.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>El identificador de la tarea creada.</returns>
     public async Task<Guid> CreateAsync(TaskItem task, CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -91,6 +108,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return task.Id;
     }
 
+    /// <summary>
+    /// Actualiza los datos de una tarea y reemplaza sus etiquetas persistidas.
+    /// </summary>
+    /// <param name="task">Entidad de tarea con el nuevo estado de datos.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns><see langword="true"/> si la tarea fue actualizada; en caso contrario, <see langword="false"/>.</returns>
     public async Task<bool> UpdateAsync(TaskItem task, CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -131,6 +154,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return affectedRows > 0;
     }
 
+    /// <summary>
+    /// Elimina una tarea de la base de datos por su identificador.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea a eliminar.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns><see langword="true"/> si se eliminó al menos un registro; en caso contrario, <see langword="false"/>.</returns>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         const string sql = "DELETE FROM dbo.Tasks WHERE Id = @Id;";
@@ -144,6 +173,13 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return affectedRows > 0;
     }
 
+    /// <summary>
+    /// Actualiza el estado persistido de una tarea.
+    /// </summary>
+    /// <param name="id">Identificador de la tarea a modificar.</param>
+    /// <param name="status">Nuevo estado a guardar.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns><see langword="true"/> si el estado fue actualizado; en caso contrario, <see langword="false"/>.</returns>
     public async Task<bool> UpdateStatusAsync(Guid id, DomainTaskStatus status, CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -161,6 +197,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return affectedRows > 0;
     }
 
+    /// <summary>
+    /// Recupera los comentarios almacenados para una tarea.
+    /// </summary>
+    /// <param name="taskId">Identificador de la tarea consultada.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La colección de comentarios ordenada por fecha de creación ascendente.</returns>
     public async Task<IReadOnlyCollection<TaskComment>> GetCommentsAsync(Guid taskId, CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -185,6 +227,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         }).ToArray();
     }
 
+    /// <summary>
+    /// Inserta un comentario en la base de datos cuando la tarea relacionada existe.
+    /// </summary>
+    /// <param name="comment">Comentario que se desea persistir.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>El identificador creado o <see langword="null"/> si la tarea no existe.</returns>
     public async Task<Guid?> AddCommentAsync(TaskComment comment, CancellationToken cancellationToken = default)
     {
         const string taskExistsSql = "SELECT 1 FROM dbo.Tasks WHERE Id = @TaskId;";
@@ -218,6 +266,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         return comment.Id;
     }
 
+    /// <summary>
+    /// Recupera la actividad histórica de una tarea.
+    /// </summary>
+    /// <param name="taskId">Identificador de la tarea consultada.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La colección de eventos de actividad ordenada del más reciente al más antiguo.</returns>
     public async Task<IReadOnlyCollection<TaskActivity>> GetActivityAsync(Guid taskId, CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -241,6 +295,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         }).ToArray();
     }
 
+    /// <summary>
+    /// Recupera el feed de actividad reciente desde una fecha determinada.
+    /// </summary>
+    /// <param name="fromUtc">Fecha mínima en UTC para devolver actividad.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>La colección de eventos recientes ordenada del más reciente al más antiguo.</returns>
     public async Task<IReadOnlyCollection<TaskActivity>> GetRecentActivityFeedAsync(DateTime fromUtc, CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -264,6 +324,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         }).ToArray();
     }
 
+    /// <summary>
+    /// Inserta un evento de actividad en la base de datos.
+    /// </summary>
+    /// <param name="activity">Evento de actividad a persistir.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una tarea completada cuando la inserción finaliza.</returns>
     public async Task AddActivityAsync(TaskActivity activity, CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -285,6 +351,12 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
             cancellationToken: cancellationToken));
     }
 
+    /// <summary>
+    /// Mapea un registro de base de datos a la entidad de dominio de tarea.
+    /// </summary>
+    /// <param name="record">Registro recuperado desde la base de datos.</param>
+    /// <param name="labels">Etiquetas asociadas a la tarea.</param>
+    /// <returns>La entidad de dominio construida a partir del registro recibido.</returns>
     private static TaskItem Map(TaskRecord record, List<string> labels)
     {
         if (!Enum.TryParse<DomainTaskStatus>(record.Status, ignoreCase: true, out var status))
@@ -312,6 +384,13 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         };
     }
 
+    /// <summary>
+    /// Carga las etiquetas agrupadas por identificador de tarea para un conjunto de tareas.
+    /// </summary>
+    /// <param name="connection">Conexión de base de datos ya abierta o reutilizable.</param>
+    /// <param name="taskIds">Identificadores de tareas cuyas etiquetas se consultarán.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Un diccionario cuya clave es el identificador de tarea y cuyo valor es su lista de etiquetas.</returns>
     private static async Task<Dictionary<Guid, List<string>>> LoadLabelsByTaskIdAsync(
         System.Data.IDbConnection connection,
         IReadOnlyCollection<Guid> taskIds,
@@ -341,6 +420,15 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
                 static group => group.Select(static row => row.Label).ToList());
     }
 
+    /// <summary>
+    /// Reemplaza la colección completa de etiquetas de una tarea dentro de la transacción actual.
+    /// </summary>
+    /// <param name="connection">Conexión de base de datos utilizada para ejecutar los comandos.</param>
+    /// <param name="transaction">Transacción activa en la que se reemplazarán las etiquetas.</param>
+    /// <param name="taskId">Identificador de la tarea cuyas etiquetas se reemplazarán.</param>
+    /// <param name="labels">Nueva colección de etiquetas que debe quedar persistida.</param>
+    /// <param name="cancellationToken">Token para cancelar la operación asincrónica.</param>
+    /// <returns>Una tarea completada cuando la operación finaliza.</returns>
     private static async Task ReplaceLabelsAsync(
         System.Data.IDbConnection connection,
         System.Data.IDbTransaction transaction,

@@ -3,7 +3,18 @@ window.TaskTrackerUi = window.TaskTrackerUi || {};
 (() => {
   const { COMMENT_IMAGE_SIZE_LABEL } = window.TaskTrackerUi;
 
+  /**
+   * Crea un cliente HTTP simple para consumir la API del tablero.
+   * @param {string} apiBase URL base del backend.
+   * @returns {(path: string, options?: RequestInit) => Promise<any>} Función request reutilizable.
+   */
   function createApiClient(apiBase) {
+    /**
+     * Ejecuta una petición HTTP normalizando headers y errores frecuentes de la UI.
+     * @param {string} path Ruta relativa del endpoint.
+     * @param {RequestInit} [options={}] Opciones adicionales de fetch.
+     * @returns {Promise<any>} El payload JSON devuelto por la API o null para 204.
+     */
     return async function request(path, options = {}) {
       const headers = { ...(options.headers || {}) };
       const hasFormBody = typeof FormData !== "undefined" && options.body instanceof FormData;

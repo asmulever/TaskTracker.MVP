@@ -6,6 +6,10 @@ namespace TaskTracker.Application.Tests;
 
 public sealed class TaskServiceUpdateTests
 {
+    /// <summary>
+    /// Verifica que una actualización sobre una tarea inexistente devuelva falso.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del caso inexistente finaliza.</returns>
     [Fact]
     public async Task UpdateAsync_ShouldReturnFalse_WhenTaskDoesNotExist()
     {
@@ -21,6 +25,10 @@ public sealed class TaskServiceUpdateTests
         Assert.False(updated);
     }
 
+    /// <summary>
+    /// Verifica que una tarea pueda avanzar de estado hasta quedar en Doing.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del cambio de estado finaliza.</returns>
     [Fact]
     public async Task UpdateStatusAsync_ShouldMoveTaskToDoing()
     {
@@ -50,6 +58,10 @@ public sealed class TaskServiceUpdateTests
         Assert.Equal(TaskTracker.Domain.Enums.TaskStatus.InProgress, saved!.Status);
     }
 
+    /// <summary>
+    /// Verifica que una transición inválida de estado dispare la excepción esperada.
+    /// </summary>
+    /// <returns>Una tarea completada cuando la validación del error esperado finaliza.</returns>
     [Fact]
     public async Task UpdateStatusAsync_ShouldRejectInvalidTransition()
     {
