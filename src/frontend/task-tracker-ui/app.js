@@ -106,6 +106,11 @@ function App() {
   const [form, setForm] = useState(emptyForm);
   const [dragTaskId, setDragTaskId] = useState(null);
   const [dragOverStatus, setDragOverStatus] = useState(null);
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [comments, setComments] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [commentText, setCommentText] = useState("");
+  const [isContextLoading, setIsContextLoading] = useState(false);
 
   const isEditing = form.id !== null;
 
@@ -118,6 +123,11 @@ function App() {
   useEffect(() => {
     loadTasks();
   }, []);
+
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    loadTaskContext(selectedTaskId);
+  }, [selectedTaskId]);
 
   const stats = useMemo(() => {
     const total = tasks.length;
@@ -204,6 +214,25 @@ function App() {
     }
   }
 
+  async function loadTaskContext(taskId) {
+    setIsContextLoading(true);
+    try {
+      const [commentData, activityData] = await Promise.all([
+        request(`/tasks/${taskId}/comments`, { method: "GET", headers: {} }),
+        request(`/tasks/${taskId}/activity`, { method: "GET", headers: {} })
+      ]);
+
+      setComments(Array.isArray(commentData) ? commentData : []);
+      setActivity(Array.isArray(activityData) ? activityData : []);
+    } catch (error) {
+      toast(error.message, false);
+      setComments([]);
+      setActivity([]);
+    } finally {
+      setIsContextLoading(false);
+    }
+  }
+
   function onFormField(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
@@ -213,6 +242,7 @@ function App() {
   }
 
   function startEdit(task) {
+    setSelectedTaskId(task.id);
     setForm({
       id: task.id,
       title: task.title || "",
@@ -290,6 +320,11 @@ function App() {
     try {
       await request(`/tasks/${id}`, { method: "DELETE" });
       if (form.id === id) resetForm();
+      if (selectedTaskId === id) {
+        setSelectedTaskId(null);
+        setComments([]);
+        setActivity([]);
+      }
       toast("Tarea eliminada");
       await loadTasks();
     } catch (error) {
@@ -379,6 +414,35 @@ function App() {
     setDragTaskId(null);
     setDragOverStatus(null);
   }
+
+  async function addComment() {
+    if (!selectedTaskId) return;
+    if (!commentText.trim()) {
+      toast("El comentario es obligatorio", false);
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      await request(`/tasks/${selectedTaskId}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ content: commentText.trim() })
+      });
+      setCommentText("");
+      await loadTaskContext(selectedTaskId);
+      await loadTasks();
+      toast("Comentario agregado");
+    } catch (error) {
+      toast(error.message, false);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const selectedTask = useMemo(
+    () => tasks.find((task) => task.id === selectedTaskId) || null,
+    [tasks, selectedTaskId]
+  );
 
   return (
     <div className="layout">
@@ -567,6 +631,15 @@ function App() {
                             <div className="card-actions">
                               <button
                                 className="btn ghost icon-btn"
+                                onClick={() => setSelectedTaskId(task.id)}
+                                disabled={isBusy}
+                                aria-label="Ver contexto"
+                                title="Ver contexto"
+                              >
+                                <span aria-hidden="true">💬</span>
+                              </button>
+                              <button
+                                className="btn ghost icon-btn"
                                 onClick={() => startEdit(task)}
                                 disabled={isBusy}
                                 aria-label="Editar tarea"
@@ -604,6 +677,70 @@ function App() {
               ))}
             </div>
           )}
+
+          <section className="context-panel">
+            <div className="context-head">
+              <h3>Contexto</h3>
+              {selectedTask && <small>{selectedTask.title}</small>}
+            </div>
+
+            {!selectedTask ? (
+              <p className="context-empty">Selecciona una tarea para ver comentarios y actividad.</p>
+            ) : (
+              <>
+                <div className="context-comment-box">
+                  <textarea
+                    value={commentText}
+                    onChange={(event) => setCommentText(event.target.value)}
+                    placeholder="Agregar comentario"
+                    maxLength={1000}
+                  />
+                  <button className="btn primary" type="button" onClick={addComment} disabled={isBusy}>
+                    Publicar comentario
+                  </button>
+                </div>
+
+                {isContextLoading ? (
+                  <p className="context-empty">Cargando contexto...</p>
+                ) : (
+                  <div className="context-grid">
+                    <article>
+                      <h4>Comentarios</h4>
+                      {comments.length === 0 ? (
+                        <p className="context-empty">Sin comentarios.</p>
+                      ) : (
+                        <ul className="context-list">
+                          {comments.map((comment) => (
+                            <li key={comment.id}>
+                              <p>{comment.content}</p>
+                              <small>{formatDate(comment.createdAt)}</small>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </article>
+
+                    <article>
+                      <h4>Actividad</h4>
+                      {activity.length === 0 ? (
+                        <p className="context-empty">Sin actividad.</p>
+                      ) : (
+                        <ul className="context-list">
+                          {activity.map((item) => (
+                            <li key={item.id}>
+                              <p>{item.action}</p>
+                              <small>{item.detail}</small>
+                              <small>{formatDate(item.createdAt)}</small>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </article>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
         </section>
       </section>
 

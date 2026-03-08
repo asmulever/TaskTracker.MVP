@@ -362,6 +362,68 @@ body[data-theme="dark"] .btn.danger {
   gap: 8px;
 }
 
+.context-panel {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-soft);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.context-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-head h3 {
+  margin: 0;
+}
+
+.context-comment-box {
+  display: grid;
+  gap: 8px;
+}
+
+.context-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.context-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.context-list li {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  padding: 9px;
+  display: grid;
+  gap: 5px;
+}
+
+.context-list p {
+  margin: 0;
+}
+
+.context-list small {
+  color: var(--muted);
+}
+
+.context-empty {
+  margin: 0;
+  color: var(--muted);
+}
+
 .sk {
   height: 86px;
   border-radius: 10px;
@@ -425,6 +487,10 @@ body[data-theme="dark"] .btn.danger {
   .board {
     grid-template-columns: 1fr;
     overflow-x: visible;
+  }
+
+  .context-grid {
+    grid-template-columns: 1fr;
   }
 
   .header {
