@@ -7,6 +7,10 @@ namespace TaskTracker.Application.Services;
 
 public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
 {
+    private const int MaxCommentLength = 1000;
+    private const int MaxCommentImageDataLength = 6_000_000;
+    private const int MaxCommentImageFileNameLength = 260;
+
     public Task<IReadOnlyCollection<TaskItem>> GetAllAsync(CancellationToken cancellationToken = default)
         => taskRepository.GetAllAsync(cancellationToken);
 
@@ -108,16 +112,45 @@ public sealed class TaskService(ITaskRepository taskRepository) : ITaskService
 
     public async Task<Guid?> AddCommentAsync(Guid taskId, CreateTaskCommentRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Content))
+        var content = request.Content?.Trim() ?? string.Empty;
+        var imageDataUrl = request.ImageDataUrl?.Trim();
+        var imageFileName = string.IsNullOrWhiteSpace(request.ImageFileName) ? null : request.ImageFileName.Trim();
+
+        if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(imageDataUrl))
         {
-            throw new ArgumentException("Comment content is required.", nameof(request.Content));
+            throw new ArgumentException("Comment content or image is required.", nameof(request.Content));
+        }
+
+        if (content.Length > MaxCommentLength)
+        {
+            throw new ArgumentException("Comment content cannot exceed 1000 characters.", nameof(request.Content));
+        }
+
+        if (!string.IsNullOrWhiteSpace(imageDataUrl))
+        {
+            if (!imageDataUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Comment image must be a valid image data URL.", nameof(request.ImageDataUrl));
+            }
+
+            if (imageDataUrl.Length > MaxCommentImageDataLength)
+            {
+                throw new ArgumentException("Comment image is too large.", nameof(request.ImageDataUrl));
+            }
+        }
+
+        if (imageFileName is not null && imageFileName.Length > MaxCommentImageFileNameLength)
+        {
+            imageFileName = imageFileName[..MaxCommentImageFileNameLength];
         }
 
         var comment = new TaskComment
         {
             Id = Guid.NewGuid(),
             TaskId = taskId,
-            Content = request.Content.Trim(),
+            Content = content,
+            ImageDataUrl = imageDataUrl,
+            ImageFileName = imageFileName,
             CreatedAt = DateTime.UtcNow
         };
 

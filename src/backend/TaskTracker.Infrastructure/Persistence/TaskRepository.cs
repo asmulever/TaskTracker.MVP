@@ -164,7 +164,7 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
     public async Task<IReadOnlyCollection<TaskComment>> GetCommentsAsync(Guid taskId, CancellationToken cancellationToken = default)
     {
         const string sql = """
-            SELECT Id, TaskId, Content, CreatedAt
+            SELECT Id, TaskId, Content, ImageDataUrl, ImageFileName, CreatedAt
             FROM dbo.TaskComments
             WHERE TaskId = @TaskId
             ORDER BY CreatedAt ASC;
@@ -179,6 +179,8 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
             Id = row.Id,
             TaskId = row.TaskId,
             Content = row.Content,
+            ImageDataUrl = row.ImageDataUrl,
+            ImageFileName = row.ImageFileName,
             CreatedAt = row.CreatedAt
         }).ToArray();
     }
@@ -187,8 +189,8 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
     {
         const string taskExistsSql = "SELECT 1 FROM dbo.Tasks WHERE Id = @TaskId;";
         const string insertSql = """
-            INSERT INTO dbo.TaskComments (Id, TaskId, Content, CreatedAt)
-            VALUES (@Id, @TaskId, @Content, @CreatedAt);
+            INSERT INTO dbo.TaskComments (Id, TaskId, Content, ImageDataUrl, ImageFileName, CreatedAt)
+            VALUES (@Id, @TaskId, @Content, @ImageDataUrl, @ImageFileName, @CreatedAt);
             """;
 
         using var connection = connectionFactory.CreateConnection();
@@ -207,6 +209,8 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
                 comment.Id,
                 comment.TaskId,
                 comment.Content,
+                comment.ImageDataUrl,
+                comment.ImageFileName,
                 comment.CreatedAt
             },
             cancellationToken: cancellationToken));
@@ -262,7 +266,7 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
     {
         if (!Enum.TryParse<DomainTaskStatus>(record.Status, ignoreCase: true, out var status))
         {
-            status = DomainTaskStatus.Created;
+            status = DomainTaskStatus.Todo;
         }
 
         if (!Enum.TryParse<DomainTaskPriority>(record.Priority, ignoreCase: true, out var priority))
@@ -372,6 +376,8 @@ public sealed class TaskRepository(ISqlConnectionFactory connectionFactory) : IT
         public Guid Id { get; init; }
         public Guid TaskId { get; init; }
         public string Content { get; init; } = string.Empty;
+        public string? ImageDataUrl { get; init; }
+        public string? ImageFileName { get; init; }
         public DateTime CreatedAt { get; init; }
     }
 

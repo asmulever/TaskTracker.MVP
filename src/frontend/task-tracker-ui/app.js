@@ -1,4 +1,4 @@
-const { useEffect, useMemo, useState } = React;
+const { useEffect, useMemo, useRef, useState } = React;
 
 const STATUS = ["Todo", "Doing", "Done"];
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -35,6 +35,7 @@ const STATUS_ORDER = {
   Done: 2
 };
 const THEME_COOKIE = "task_theme";
+const MAX_COMMENT_IMAGE_SIZE = 4 * 1024 * 1024;
 
 function getCookieValue(name) {
   const regex = new RegExp(`(?:^|; )${name}=([^;]*)`);
@@ -98,13 +99,19 @@ function parseLabels(labelsText) {
     .filter((label) => label.length > 0);
 }
 
+function getTodayInputDate() {
+  const now = new Date();
+  const offsetMs = now.getTimezoneOffset() * 60 * 1000;
+  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
 function emptyForm() {
   return {
     id: null,
     title: "",
     description: "",
     priority: "Medium",
-    targetStartDate: "",
+    targetStartDate: getTodayInputDate(),
     targetDueDate: "",
     labelsText: "",
     status: "Todo"
@@ -145,6 +152,24 @@ function runCardAction(event, action) {
   action();
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen seleccionada."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function getCommentImageFileName(file) {
+  if (file && typeof file.name === "string" && file.name.trim().length > 0) {
+    return file.name.trim();
+  }
+
+  const extension = (file?.type || "image/png").split("/")[1] || "png";
+  return `imagen-${Date.now()}.${extension}`;
+}
+
 function App() {
   const apiBase = (window.TASK_API_URL || window.location.origin).replace(/\/$/, "");
 
@@ -161,10 +186,16 @@ function App() {
   const [comments, setComments] = useState([]);
   const [activity, setActivity] = useState([]);
   const [commentText, setCommentText] = useState("");
+  const [commentImage, setCommentImage] = useState(null);
+  const [expandedCommentImages, setExpandedCommentImages] = useState({});
   const [isContextLoading, setIsContextLoading] = useState(false);
   const [contextTab, setContextTab] = useState("comments");
+  const [isContextOpen, setIsContextOpen] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [noticeModal, setNoticeModal] = useState(null);
+  const commentFileInputRef = useRef(null);
+  const titleInputRef = useRef(null);
+  const descriptionInputRef = useRef(null);
 
   const isEditing = form.id !== null;
 
@@ -182,6 +213,13 @@ function App() {
     if (!selectedTaskId) return;
     loadTaskContext(selectedTaskId);
   }, [selectedTaskId]);
+
+  useEffect(() => {
+    if (!isFormOpen) return;
+    window.requestAnimationFrame(() => {
+      titleInputRef.current?.focus();
+    });
+  }, [isFormOpen]);
 
   const stats = useMemo(() => {
     const total = tasks.length;
@@ -360,9 +398,33 @@ function App() {
     resetForm();
   }
 
+  function openContextModal(taskId) {
+    setCommentText("");
+    setCommentImage(null);
+    setExpandedCommentImages({});
+    setSelectedTaskId(normalizeId(taskId));
+    setContextTab("comments");
+    setIsContextOpen(true);
+  }
+
+  function closeContextModal() {
+    setCommentText("");
+    setCommentImage(null);
+    setExpandedCommentImages({});
+    setContextTab("comments");
+    setComments([]);
+    setActivity([]);
+    setSelectedTaskId(null);
+    setIsContextOpen(false);
+    if (commentFileInputRef.current) {
+      commentFileInputRef.current.value = "";
+    }
+  }
+
   function startEdit(task) {
     setSelectedTaskId(normalizeId(task.id));
     setContextTab("comments");
+    setIsContextOpen(false);
     setIsFormOpen(true);
     setForm({
       id: task.id,
@@ -450,9 +512,7 @@ function App() {
       await request(`/tasks/${id}`, { method: "DELETE" });
       if (form.id === id) closeFormModal();
       if (selectedTaskId === id) {
-        setSelectedTaskId(null);
-        setComments([]);
-        setActivity([]);
+        closeContextModal();
       }
       toast("Tarea eliminada");
       await loadTasks();
@@ -558,20 +618,30 @@ function App() {
       toast("Selecciona una tarea válida", false);
       return;
     }
-    if (!commentText.trim()) {
-      toast("El comentario es obligatorio", false);
+    if (!commentText.trim() && !commentImage) {
+      toast("El comentario o la imagen son obligatorios", false);
       return;
     }
 
     setIsBusy(true);
     try {
+      const taskId = selectedTaskId;
       await request(`/tasks/${selectedTaskId}/comments`, {
         method: "POST",
-        body: JSON.stringify({ content: commentText.trim() })
+        body: JSON.stringify({
+          content: commentText.trim(),
+          imageDataUrl: commentImage?.dataUrl || null,
+          imageFileName: commentImage?.fileName || null
+        })
       });
       setCommentText("");
-      await loadTaskContext(selectedTaskId);
+      setCommentImage(null);
+      if (commentFileInputRef.current) {
+        commentFileInputRef.current.value = "";
+      }
+      await loadTaskContext(taskId);
       await loadTasks();
+      closeContextModal();
       toast("Comentario agregado");
     } catch (error) {
       toast(error.message, false);
@@ -580,12 +650,73 @@ function App() {
     }
   }
 
-  function cancelCommentDraft() {
-    setCommentText("");
-    setContextTab("comments");
-    setComments([]);
-    setActivity([]);
-    setSelectedTaskId(null);
+  async function attachCommentImage(file) {
+    if (!file) return;
+
+    if (!(file.type || "").toLowerCase().startsWith("image/")) {
+      toast("Solo se permiten imagenes adjuntas.", false);
+      return;
+    }
+
+    if (file.size > MAX_COMMENT_IMAGE_SIZE) {
+      toast("La imagen supera el maximo de 4 MB.", false);
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setCommentImage({
+        dataUrl,
+        fileName: getCommentImageFileName(file)
+      });
+      toast("Imagen adjuntada");
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  async function onCommentImageSelected(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await attachCommentImage(file);
+  }
+
+  async function onCommentPaste(event) {
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageItem = items.find((item) => (item.type || "").toLowerCase().startsWith("image/"));
+    if (!imageItem) return;
+
+    event.preventDefault();
+    const file = imageItem.getAsFile();
+    if (!file) {
+      toast("No se pudo leer la imagen pegada.", false);
+      return;
+    }
+
+    await attachCommentImage(file);
+  }
+
+  function clearCommentImage() {
+    setCommentImage(null);
+    if (commentFileInputRef.current) {
+      commentFileInputRef.current.value = "";
+    }
+  }
+
+  function onTitleKeyDown(event) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent?.isComposing) {
+      return;
+    }
+
+    event.preventDefault();
+    descriptionInputRef.current?.focus();
+  }
+
+  function toggleCommentImage(commentId) {
+    setExpandedCommentImages((current) => ({
+      ...current,
+      [commentId]: !current[commentId]
+    }));
   }
 
   const selectedTask = useMemo(
@@ -736,8 +867,7 @@ function App() {
                                 type="button"
                                 draggable={false}
                                 onClick={(event) => runCardAction(event, () => {
-                                  setSelectedTaskId(normalizeId(task.id));
-                                  setContextTab("comments");
+                                  openContextModal(task.id);
                                 })}
                                 disabled={isBusy}
                                 aria-label="Ver contexto"
@@ -791,98 +921,171 @@ function App() {
             </div>
           )}
 
-          <section className="context-panel">
-            <div className="context-head">
+        </section>
+      </section>
+
+      {isContextOpen && (
+        <div className="form-overlay" onClick={closeContextModal}>
+          <aside className="panel modal-panel context-modal-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
               <div>
                 <p className="label">Detalle conectado</p>
-                <h3>Contexto</h3>
+                <h2>Contexto</h2>
               </div>
-              {selectedTask && (
-                <div className="context-task-meta">
-                  <small>{selectedTask.title}</small>
-                  <span className={`pill priority-${(selectedTask.priority || "Medium").toLowerCase()}`}>
-                    {selectedTask.priority || "Medium"}
-                  </span>
-                  <span className="pill status">{selectedTask.status}</span>
-                </div>
-              )}
+              <button className="btn ghost icon-btn" type="button" onClick={closeContextModal} aria-label="Cerrar contexto" title="Cerrar contexto">
+                <span aria-hidden="true">✕</span>
+              </button>
             </div>
 
-            {!selectedTask ? (
-              <p className="context-empty">Selecciona una tarea para ver comentarios y actividad.</p>
-            ) : (
-              <>
-                <div className="context-comment-box">
-                  <textarea
-                    value={commentText}
-                    onChange={(event) => setCommentText(event.target.value)}
-                    placeholder="Agregar comentario"
-                    maxLength={1000}
-                  />
-                  <div className="context-comment-actions">
-                    <button className="btn primary" type="button" onClick={addComment} disabled={isBusy}>
-                      Publicar comentario
-                    </button>
-                    <button className="btn ghost" type="button" onClick={cancelCommentDraft} disabled={isBusy}>
-                      Cancelar
-                    </button>
+            <section className="context-panel">
+              {selectedTask && (
+                <div className="context-head">
+                  <div className="context-task-meta">
+                    <strong>{selectedTask.title}</strong>
+                    <span className={`pill priority-${(selectedTask.priority || "Medium").toLowerCase()}`}>
+                      {selectedTask.priority || "Medium"}
+                    </span>
+                    <span className="pill status">{selectedTask.status}</span>
                   </div>
                 </div>
+              )}
 
-                {isContextLoading ? (
-                  <p className="context-empty">Cargando contexto...</p>
-                ) : (
-                  <div className="context-tabs-wrap">
-                    <div className="context-tabs">
+              {!selectedTask ? (
+                <p className="context-empty">Selecciona una tarea para ver comentarios y actividad.</p>
+              ) : (
+                <>
+                  <div className="context-comment-box">
+                    <input
+                      ref={commentFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={onCommentImageSelected}
+                    />
+                    <textarea
+                      value={commentText}
+                      onChange={(event) => setCommentText(event.target.value)}
+                      onPaste={onCommentPaste}
+                      placeholder="Agregar comentario o pegar una imagen"
+                      maxLength={1000}
+                    />
+                    <div className="context-comment-tools">
                       <button
-                        className={`btn ghost tab-btn ${contextTab === "comments" ? "active" : ""}`}
+                        className="btn ghost"
                         type="button"
-                        onClick={() => setContextTab("comments")}
+                        onClick={() => commentFileInputRef.current?.click()}
+                        disabled={isBusy}
                       >
-                        Comentarios ({comments.length})
+                        Adjuntar imagen
                       </button>
-                      <button
-                        className={`btn ghost tab-btn ${contextTab === "activity" ? "active" : ""}`}
-                        type="button"
-                        onClick={() => setContextTab("activity")}
-                      >
-                        Actividad ({activity.length})
+                      <small className="hint">Tambien puedes pegar una imagen con Ctrl+V.</small>
+                    </div>
+                    {commentImage && (
+                      <div className="comment-image-preview">
+                        <img src={commentImage.dataUrl} alt={commentImage.fileName || "Imagen adjunta"} />
+                        <div className="comment-image-meta">
+                          <small>{commentImage.fileName}</small>
+                          <button className="btn ghost" type="button" onClick={clearCommentImage} disabled={isBusy}>
+                            Quitar imagen
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <div className="context-comment-actions">
+                      <button className="btn ghost" type="button" onClick={closeContextModal} disabled={isBusy}>
+                        Cancelar
+                      </button>
+                      <button className="btn primary" type="button" onClick={addComment} disabled={isBusy}>
+                        Publicar comentario
                       </button>
                     </div>
+                  </div>
 
-                    {contextTab === "comments" ? (
-                      comments.length === 0 ? (
-                        <p className="context-empty">Sin comentarios.</p>
+                  {isContextLoading ? (
+                    <p className="context-empty">Cargando contexto...</p>
+                  ) : (
+                    <div className="context-tabs-wrap">
+                      <div className="context-tabs">
+                        <button
+                          className={`btn ghost tab-btn ${contextTab === "comments" ? "active" : ""}`}
+                          type="button"
+                          onClick={() => setContextTab("comments")}
+                        >
+                          Comentarios ({comments.length})
+                        </button>
+                        <button
+                          className={`btn ghost tab-btn ${contextTab === "activity" ? "active" : ""}`}
+                          type="button"
+                          onClick={() => setContextTab("activity")}
+                        >
+                          Actividad ({activity.length})
+                        </button>
+                      </div>
+
+                      {contextTab === "comments" ? (
+                        comments.length === 0 ? (
+                          <p className="context-empty">Sin comentarios.</p>
+                        ) : (
+                          <ul className="context-list">
+                            {comments.map((comment) => (
+                              <li key={comment.id}>
+                                <div className="comment-meta-row">
+                                  <small>{formatDateTime(comment.createdAt)}</small>
+                                  {comment.imageDataUrl ? (
+                                    <span className="comment-attachment-badge" title="Este comentario tiene una imagen adjunta">
+                                      <span aria-hidden="true">🖼</span>
+                                      <span>Imagen adjunta</span>
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {comment.content ? <p>{comment.content}</p> : null}
+                                {comment.imageDataUrl ? (
+                                  <>
+                                    <button
+                                      className="btn ghost comment-attachment-toggle"
+                                      type="button"
+                                      onClick={() => toggleCommentImage(comment.id)}
+                                    >
+                                      <span aria-hidden="true">🖼</span>
+                                      <span>
+                                        {expandedCommentImages[comment.id] ? "Ocultar imagen adjunta" : "Ver imagen adjunta"}
+                                      </span>
+                                    </button>
+                                    {expandedCommentImages[comment.id] ? (
+                                      <img
+                                        className="comment-image"
+                                        src={comment.imageDataUrl}
+                                        alt={comment.imageFileName || "Imagen adjunta del comentario"}
+                                        loading="lazy"
+                                      />
+                                    ) : null}
+                                  </>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        )
+                      ) : activity.length === 0 ? (
+                        <p className="context-empty">Sin actividad.</p>
                       ) : (
                         <ul className="context-list">
-                          {comments.map((comment) => (
-                            <li key={comment.id}>
-                              <p>{comment.content}</p>
-                              <small>{formatDateTime(comment.createdAt)}</small>
+                          {activity.map((item) => (
+                            <li key={item.id}>
+                              <p>{item.action}</p>
+                              <small>{item.detail}</small>
+                              <small>{formatDateTime(item.createdAt)}</small>
                             </li>
                           ))}
                         </ul>
-                      )
-                    ) : activity.length === 0 ? (
-                      <p className="context-empty">Sin actividad.</p>
-                    ) : (
-                      <ul className="context-list">
-                        {activity.map((item) => (
-                          <li key={item.id}>
-                            <p>{item.action}</p>
-                            <small>{item.detail}</small>
-                            <small>{formatDateTime(item.createdAt)}</small>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </section>
-        </section>
-      </section>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          </aside>
+        </div>
+      )}
 
       {isFormOpen && (
         <div className="form-overlay" onClick={closeFormModal}>
@@ -896,8 +1099,10 @@ function App() {
             <form onSubmit={saveTask} className="task-form">
               <label>Título</label>
               <input
+                ref={titleInputRef}
                 value={form.title}
                 onChange={(e) => onFormField("title", e.target.value)}
+                onKeyDown={onTitleKeyDown}
                 maxLength={200}
                 placeholder="Ej: Ajustar API de reportes"
                 required
@@ -905,6 +1110,7 @@ function App() {
 
               <label>Descripción</label>
               <textarea
+                ref={descriptionInputRef}
                 value={form.description}
                 onChange={(e) => onFormField("description", e.target.value)}
                 maxLength={1000}

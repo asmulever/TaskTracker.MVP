@@ -5,5 +5,7 @@ public sealed class TaskComment
     public Guid Id { get; set; }
     public Guid TaskId { get; set; }
     public string Content { get; set; } = string.Empty;
+    public string? ImageDataUrl { get; set; }
+    public string? ImageFileName { get; set; }
     public DateTime CreatedAt { get; set; }
 }

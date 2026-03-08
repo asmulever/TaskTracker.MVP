@@ -76,4 +76,44 @@ public sealed class TasksController(ITaskService taskService) : ControllerBase
         }
     }
 
+    [HttpGet("{id}/comments")]
+    public async Task<IActionResult> GetComments(Guid id, CancellationToken cancellationToken)
+    {
+        var task = await taskService.GetByIdAsync(id, cancellationToken);
+        if (task is null)
+        {
+            return NotFound();
+        }
+
+        var comments = await taskService.GetCommentsAsync(id, cancellationToken);
+        return Ok(comments);
+    }
+
+    [HttpPost("{id}/comments")]
+    public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateTaskCommentRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var commentId = await taskService.AddCommentAsync(id, request, cancellationToken);
+            return commentId is null ? NotFound() : Ok(new { id = commentId.Value });
+        }
+        catch (ArgumentException exception)
+        {
+            return ValidationProblem(detail: exception.Message);
+        }
+    }
+
+    [HttpGet("{id}/activity")]
+    public async Task<IActionResult> GetActivity(Guid id, CancellationToken cancellationToken)
+    {
+        var task = await taskService.GetByIdAsync(id, cancellationToken);
+        if (task is null)
+        {
+            return NotFound();
+        }
+
+        var activity = await taskService.GetActivityAsync(id, cancellationToken);
+        return Ok(activity);
+    }
+
 }
