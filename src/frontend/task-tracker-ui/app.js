@@ -1,6 +1,16 @@
 const { useEffect, useMemo, useState } = React;
 
 const STATUS = ["Todo", "Doing", "Done"];
+const STATUS_ALIASES = {
+  Created: "Todo",
+  Planned: "Todo",
+  InProgress: "Doing",
+  Blocked: "Doing",
+  Done: "Done",
+  Archived: "Done",
+  Todo: "Todo",
+  Doing: "Doing"
+};
 const THEME_COOKIE = "task_theme";
 
 function getCookieValue(name) {
@@ -47,6 +57,10 @@ function emptyForm() {
     dueDate: "",
     status: "Todo"
   };
+}
+
+function toUiStatus(status) {
+  return STATUS_ALIASES[status] || "Todo";
 }
 
 function App() {
@@ -138,7 +152,10 @@ function App() {
     setIsLoading(true);
     try {
       const data = await request("/tasks", { method: "GET", headers: {} });
-      setTasks(Array.isArray(data) ? data : []);
+      const normalized = Array.isArray(data)
+        ? data.map((task) => ({ ...task, status: toUiStatus(task.status) }))
+        : [];
+      setTasks(normalized);
     } catch (error) {
       toast(error.message, false);
     } finally {
