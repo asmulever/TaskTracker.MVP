@@ -13,6 +13,8 @@ builder.Services
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 builder.Services.AddOpenApi();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddInfrastructure();
@@ -32,6 +34,12 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "TaskTracker API v1");
+        options.RoutePrefix = string.Empty;
+    });
 }
 
 app.UseCors("Frontend");
