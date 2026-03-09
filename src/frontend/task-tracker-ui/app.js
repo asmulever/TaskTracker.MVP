@@ -705,7 +705,7 @@ function App() {
     <div className="layout">
       <header className="hero">
         <div className="hero-copy">
-          <h1>Task Tracker Pro</h1>
+          <h1>Task Tracker Lite</h1>
           <p className="hero-text">
             Tablero operativo para priorizar, ejecutar y cerrar trabajo sin perder el hilo del contexto.
           </p>
