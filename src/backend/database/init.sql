@@ -47,16 +47,6 @@ BEGIN
 END
 GO
 
-UPDATE dbo.Tasks
-SET Status = CASE
-    WHEN Status IN ('Created', 'Planned') THEN 'Todo'
-    WHEN Status IN ('InProgress', 'Blocked') THEN 'Doing'
-    WHEN Status = 'Archived' THEN 'Done'
-    ELSE Status
-END
-WHERE Status IN ('Created', 'Planned', 'InProgress', 'Blocked', 'Archived');
-GO
-
 IF EXISTS (
     SELECT 1
     FROM sys.check_constraints
@@ -66,6 +56,16 @@ IF EXISTS (
 BEGIN
     ALTER TABLE dbo.Tasks DROP CONSTRAINT CK_Tasks_Status;
 END
+GO
+
+UPDATE dbo.Tasks
+SET Status = CASE
+    WHEN Status IN ('Created', 'Planned') THEN 'Todo'
+    WHEN Status IN ('InProgress', 'Blocked') THEN 'Doing'
+    WHEN Status = 'Archived' THEN 'Done'
+    ELSE Status
+END
+WHERE Status IN ('Created', 'Planned', 'InProgress', 'Blocked', 'Archived');
 GO
 
 IF EXISTS (
